@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Volume2,
+  VolumeX,
   Wifi,
   WifiOff,
   Zap,
@@ -154,6 +156,9 @@ export default function App() {
   const isLoading = useAppStore((s) => s.isLoading);
   const processUserInput = useAppStore((s) => s.processUserInput);
   const clearMessages = useAppStore((s) => s.clearMessages);
+  const settings = useAppStore((s) => s.settings);
+  const toggleTtsEnabled = useAppStore((s) => s.toggleTtsEnabled);
+  const toggleTtsMode = useAppStore((s) => s.toggleTtsMode);
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -200,6 +205,44 @@ export default function App() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
+                {/* TTS Toggle */}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={toggleTtsEnabled}
+                  className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
+                    settings.ttsEnabled
+                      ? "border-brand/25 bg-brand/10 text-brand"
+                      : "border-line bg-white/[0.04] text-text-muted"
+                  }`}
+                  title={settings.ttsEnabled ? "Turn TTS off" : "Turn TTS on"}
+                >
+                  {settings.ttsEnabled ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" />
+                  )}
+                  TTS
+                </motion.button>
+
+                {/* TTS Mode Toggle (only visible when TTS is on) */}
+                {settings.ttsEnabled && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: "auto" }}
+                    exit={{ opacity: 0, width: 0 }}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={toggleTtsMode}
+                    className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition hover:border-brand/25 hover:text-text"
+                    title="Switch TTS engine"
+                  >
+                    {settings.ttsMode === "browser" ? "Browser" : "ElevenLabs"}
+                  </motion.button>
+                )}
+
                 <StatusPill online={backendOnline} />
                 {messages.length > 0 && (
                   <motion.button

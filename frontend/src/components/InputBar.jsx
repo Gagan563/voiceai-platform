@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Send, X, Zap, Globe, Cloud } from "lucide-react";
+import { motion } from "framer-motion";
+import { Loader2, Send, X, Globe, Cloud } from "lucide-react";
 import { transcribeAudio } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import VoiceButton from "./VoiceButton";

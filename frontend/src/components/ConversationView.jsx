@@ -12,6 +12,9 @@ import {
   XCircle,
 } from "lucide-react";
 import useAppStore from "@/store/appStore";
+import SpeakingIndicator from "./SpeakingIndicator";
+import useTTS from "@/hooks/useTTS";
+import useElevenLabs from "@/hooks/useElevenLabs";
 
 const messageVariants = {
   hidden: { opacity: 0, y: 18, scale: 0.98 },
@@ -242,14 +245,59 @@ export default function ConversationView({ prompts = [], onPrompt }) {
   const messages = useAppStore((s) => s.messages);
   const isLoading = useAppStore((s) => s.isLoading);
   const loadingStage = useAppStore((s) => s.loadingStage);
+  const settings = useAppStore((s) => s.settings);
+  const speakingId = useAppStore((s) => s.speakingId);
+  const setSpeakingMessageId = useAppStore((s) => s.setSpeakingMessageId);
   const scrollRef = useRef(null);
+  const prevMessageCountRef = useRef(messages.length);
 
+  // TTS hooks
+  const browserTTS = useTTS();
+  const elevenLabsTTS = useElevenLabs();
+
+  const activeTTS = settings.ttsMode === "elevenlabs" ? elevenLabsTTS : browserTTS;
+
+  // Auto-scroll
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
   }, [messages, isLoading]);
+
+  // Auto-speak new AI messages when TTS is enabled
+  useEffect(() => {
+    if (!settings.ttsEnabled) return;
+    if (messages.length <= prevMessageCountRef.current) {
+      prevMessageCountRef.current = messages.length;
+      return;
+    }
+
+    prevMessageCountRef.current = messages.length;
+
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg &&
+      (lastMsg.role === "assistant") &&
+      lastMsg.type !== "intent" &&
+      lastMsg.content
+    ) {
+      setSpeakingMessageId(lastMsg.id);
+      activeTTS.speak(lastMsg.content);
+    }
+  }, [messages, settings.ttsEnabled]);
+
+  // Clear speakingId when speech ends
+  useEffect(() => {
+    if (!activeTTS.isSpeaking && speakingId) {
+      setSpeakingMessageId(null);
+    }
+  }, [activeTTS.isSpeaking, speakingId]);
+
+  const handleStopSpeaking = () => {
+    activeTTS.stop();
+    setSpeakingMessageId(null);
+  };
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -303,6 +351,13 @@ export default function ConversationView({ prompts = [], onPrompt }) {
                       })}
                     </span>
                   </div>
+
+                  {/* Speaking indicator */}
+                  {speakingId === msg.id && (
+                    <div className="mt-1">
+                      <SpeakingIndicator onStop={handleStopSpeaking} />
+                    </div>
+                  )}
                 </motion.div>
               );
             })}

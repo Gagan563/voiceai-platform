@@ -12,6 +12,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("./prompts");
 const { initializeSocket } = require("./socket");
 const transcribeRouter = require("./routes/transcribe");
+const ttsRouter = require("./routes/tts");
 
 // ── Config ──
 const PORT = process.env.PORT || 3001;
@@ -74,6 +75,11 @@ app.get("/health", (req, res) => {
  * POST /transcribe — Audio → Text (Whisper API or stub)
  */
 app.use("/transcribe", transcribeRouter);
+
+/**
+ * POST /tts — Text → Speech (ElevenLabs API)
+ */
+app.use("/tts", ttsRouter);
 
 /**
  * POST /intent
