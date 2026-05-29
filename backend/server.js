@@ -1,0 +1,339 @@
+// ============================================
+// VoiceAI Platform — Express Server
+// ============================================
+
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const http = require("http");
+const multer = require("multer");
+const Anthropic = require("@anthropic-ai/sdk");
+const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("./prompts");
+const { initializeSocket } = require("./socket");
+
+// ── Config ──
+const PORT = process.env.PORT || 3001;
+const app = express();
+const server = http.createServer(app);
+
+// ── Middleware ──
+app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:3000" }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// Multer config for audio file uploads (used by /transcribe)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      "audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg",
+      "audio/webm", "audio/flac", "audio/m4a", "audio/mp4",
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported audio format: ${file.mimetype}`), false);
+    }
+  },
+});
+
+// ── Anthropic Client ──
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// ── Request Logger Middleware ──
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  next();
+});
+
+// =============================================
+// ROUTES
+// =============================================
+
+/**
+ * GET /health
+ * Health check endpoint
+ */
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "voiceai-backend",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+/**
+ * POST /transcribe
+ * Accepts audio file upload, returns transcript text.
+ * STUB — will be connected to Whisper / Deepgram / AssemblyAI in a future phase.
+ */
+app.post("/transcribe", upload.single("audio"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        error: "No audio file provided",
+        hint: "Send a multipart/form-data request with an 'audio' field containing a WAV, MP3, OGG, WEBM, or FLAC file.",
+      });
+    }
+
+    console.log(`[Transcribe] Received audio: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB, ${req.file.mimetype})`);
+
+    // STUB: Return a simulated transcript
+    // In production, this will call Whisper API, Deepgram, or AssemblyAI
+    res.json({
+      success: true,
+      transcript: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget",
+      confidence: 0.94,
+      language: "en",
+      duration_seconds: 4.2,
+      metadata: {
+        filename: req.file.originalname,
+        size_bytes: req.file.size,
+        mimetype: req.file.mimetype,
+        note: "STUB — This is a simulated transcript. Real transcription will be implemented in a future phase.",
+      },
+    });
+  } catch (error) {
+    console.error("[Transcribe] Error:", error.message);
+    res.status(500).json({ error: "Transcription failed", details: error.message });
+  }
+});
+
+/**
+ * POST /intent
+ * Takes { text }, sends to Claude with intent extraction prompt.
+ * Returns structured JSON: goal, action_type, entities, constraints, missing_info, confidence
+ */
+app.post("/intent", async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({
+        error: "Invalid request body",
+        hint: "Send JSON with a 'text' field containing the user's spoken input as a string.",
+        example: { text: "Schedule a meeting with Sarah next Tuesday at 3pm" },
+      });
+    }
+
+    console.log(`[Intent] Processing: "${text.substring(0, 80)}${text.length > 80 ? "..." : ""}"`);
+
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      system: INTENT_EXTRACTION_PROMPT,
+      messages: [{ role: "user", content: text }],
+    });
+
+    const responseText = message.content[0]?.text || "";
+
+    // Parse the JSON response from Claude
+    let intent;
+    try {
+      intent = JSON.parse(responseText);
+    } catch {
+      console.warn("[Intent] Claude did not return valid JSON. Raw response:", responseText);
+      return res.status(502).json({
+        error: "AI returned invalid JSON",
+        raw_response: responseText,
+        hint: "The AI model did not follow the expected response format. Try rephrasing your input.",
+      });
+    }
+
+    console.log(`[Intent] Extracted: action_type="${intent.action_type}", confidence=${intent.confidence}`);
+
+    res.json({
+      success: true,
+      intent,
+      metadata: {
+        model: "claude-sonnet-4-20250514",
+        input_tokens: message.usage?.input_tokens,
+        output_tokens: message.usage?.output_tokens,
+      },
+    });
+  } catch (error) {
+    console.error("[Intent] Error:", error.message);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: "Invalid Anthropic API key",
+        hint: "Check your ANTHROPIC_API_KEY in the .env file.",
+      });
+    }
+
+    res.status(500).json({ error: "Intent extraction failed", details: error.message });
+  }
+});
+
+/**
+ * POST /plan
+ * Takes intent JSON, sends to Claude, returns a numbered step-by-step plan as JSON array.
+ */
+app.post("/plan", async (req, res) => {
+  try {
+    const { intent } = req.body;
+
+    if (!intent || typeof intent !== "object") {
+      return res.status(400).json({
+        error: "Invalid request body",
+        hint: "Send JSON with an 'intent' field containing the structured intent object from /intent.",
+        example: {
+          intent: {
+            goal: "Schedule a meeting",
+            action_type: "schedule",
+            entities: { person: "Sarah" },
+            constraints: ["next Tuesday"],
+            missing_info: [],
+            confidence: 0.9,
+          },
+        },
+      });
+    }
+
+    console.log(`[Plan] Generating plan for: "${intent.goal}"`);
+
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      system: PLAN_GENERATION_PROMPT,
+      messages: [{ role: "user", content: JSON.stringify(intent) }],
+    });
+
+    const responseText = message.content[0]?.text || "";
+
+    // Parse the JSON array response from Claude
+    let plan;
+    try {
+      plan = JSON.parse(responseText);
+    } catch {
+      console.warn("[Plan] Claude did not return valid JSON. Raw response:", responseText);
+      return res.status(502).json({
+        error: "AI returned invalid JSON",
+        raw_response: responseText,
+        hint: "The AI model did not follow the expected response format.",
+      });
+    }
+
+    if (!Array.isArray(plan)) {
+      return res.status(502).json({
+        error: "AI returned JSON but not an array",
+        raw_response: plan,
+      });
+    }
+
+    console.log(`[Plan] Generated ${plan.length} steps`);
+
+    res.json({
+      success: true,
+      plan,
+      total_steps: plan.length,
+      estimated_total_seconds: plan.reduce((sum, step) => sum + (step.estimated_duration_seconds || 0), 0),
+      metadata: {
+        model: "claude-sonnet-4-20250514",
+        input_tokens: message.usage?.input_tokens,
+        output_tokens: message.usage?.output_tokens,
+      },
+    });
+  } catch (error) {
+    console.error("[Plan] Error:", error.message);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: "Invalid Anthropic API key",
+        hint: "Check your ANTHROPIC_API_KEY in the .env file.",
+      });
+    }
+
+    res.status(500).json({ error: "Plan generation failed", details: error.message });
+  }
+});
+
+/**
+ * POST /execute
+ * Takes an approved plan, logs it, and returns confirmation.
+ * STUB — will connect to actual service executors in a future phase.
+ */
+app.post("/execute", (req, res) => {
+  try {
+    const { plan } = req.body;
+
+    if (!plan || !Array.isArray(plan)) {
+      return res.status(400).json({
+        error: "Invalid request body",
+        hint: "Send JSON with a 'plan' field containing the step array from /plan.",
+      });
+    }
+
+    console.log(`[Execute] Received approved plan with ${plan.length} steps:`);
+    plan.forEach((step) => {
+      console.log(`  Step ${step.step}: [${step.service}] ${step.action} — ${step.description}`);
+    });
+
+    // STUB: Log and acknowledge
+    res.json({
+      status: "ok",
+      message: "Plan received",
+      steps_received: plan.length,
+      execution_id: `exec_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      note: "STUB — Actual execution will be implemented in a future phase. Plan has been logged.",
+    });
+  } catch (error) {
+    console.error("[Execute] Error:", error.message);
+    res.status(500).json({ error: "Execution failed", details: error.message });
+  }
+});
+
+// ── 404 Handler ──
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Not found",
+    path: req.path,
+    available_endpoints: [
+      "GET  /health",
+      "POST /transcribe",
+      "POST /intent",
+      "POST /plan",
+      "POST /execute",
+    ],
+  });
+});
+
+// ── Error Handler ──
+app.use((err, req, res, next) => {
+  console.error("[Server Error]", err.message);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal server error",
+  });
+});
+
+// ── Initialize Socket.IO ──
+const io = initializeSocket(server);
+
+// ── Start Server ──
+server.listen(PORT, () => {
+  console.log("");
+  console.log("╔══════════════════════════════════════════════╗");
+  console.log("║         VoiceAI Platform — Backend           ║");
+  console.log("╠══════════════════════════════════════════════╣");
+  console.log(`║  HTTP Server:  http://localhost:${PORT}          ║`);
+  console.log(`║  Socket.IO:    ws://localhost:${PORT}            ║`);
+  console.log(`║  Environment:  ${(process.env.NODE_ENV || "development").padEnd(24)}     ║`);
+  console.log("╠══════════════════════════════════════════════╣");
+  console.log("║  Endpoints:                                  ║");
+  console.log("║    GET  /health     — Health check            ║");
+  console.log("║    POST /transcribe — Audio → Text (stub)     ║");
+  console.log("║    POST /intent     — Text → Intent JSON      ║");
+  console.log("║    POST /plan       — Intent → Step Plan      ║");
+  console.log("║    POST /execute    — Plan → Execution (stub) ║");
+  console.log("╚══════════════════════════════════════════════╝");
+  console.log("");
+});
+
+module.exports = { app, server };
