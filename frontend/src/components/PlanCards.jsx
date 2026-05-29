@@ -1,81 +1,104 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  CheckCircle,
-  Pencil,
-  XCircle,
-  Clock,
-  Zap,
-  Server,
+  Bell,
+  Brain,
+  CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock3,
+  Database,
+  FileText,
+  Globe2,
+  HardDrive,
+  Mail,
+  MonitorCog,
+  Play,
+  Server,
+  XCircle,
 } from "lucide-react";
-import { useState } from "react";
-import useAppStore from "../store/appStore";
+import useAppStore from "@/store/appStore";
 
-/** Map service names to colors */
-const serviceColors = {
-  calendar: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  email: "text-pink-400 bg-pink-500/10 border-pink-500/20",
-  database: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  ai: "text-purple-400 bg-purple-500/10 border-purple-500/20",
-  notification: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  device: "text-orange-400 bg-orange-500/10 border-orange-500/20",
-  filesystem: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
-  web: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+const serviceMeta = {
+  calendar: {
+    icon: CalendarDays,
+    className: "border-aqua/25 bg-aqua/10 text-aqua",
+  },
+  email: { icon: Mail, className: "border-coral/25 bg-coral/10 text-coral" },
+  database: {
+    icon: Database,
+    className: "border-leaf/25 bg-leaf/10 text-leaf",
+  },
+  ai: { icon: Brain, className: "border-brand/25 bg-brand/10 text-brand" },
+  notification: {
+    icon: Bell,
+    className: "border-amber/25 bg-amber/10 text-amber",
+  },
+  device: {
+    icon: MonitorCog,
+    className: "border-coral/25 bg-coral/10 text-coral",
+  },
+  filesystem: {
+    icon: HardDrive,
+    className: "border-aqua/25 bg-aqua/10 text-aqua",
+  },
+  web: { icon: Globe2, className: "border-brand/25 bg-brand/10 text-brand" },
 };
 
-/** Single step card */
 function StepCard({ step, index }) {
-  const [expanded, setExpanded] = useState(false);
-  const colorClass = serviceColors[step.service] || serviceColors.ai;
+  const [expanded, setExpanded] = useState(index === 0);
+  const meta = serviceMeta[step.service] || {
+    icon: FileText,
+    className: "border-line bg-white/[0.04] text-text-soft",
+  };
+  const Icon = meta.icon;
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.08, type: "spring", stiffness: 300, damping: 25 }}
-      className="glass rounded-xl overflow-hidden hover:border-[var(--color-accent-purple)]/30 transition-all duration-300 group"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05, type: "spring", stiffness: 320, damping: 26 }}
+      className="overflow-hidden rounded-2xl border border-line bg-white/[0.035]"
     >
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-3 px-3 py-3 text-left"
       >
-        {/* Step number */}
-        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--color-accent-purple)]/20 to-[var(--color-accent-blue)]/20 flex items-center justify-center shrink-0 border border-[var(--color-accent-purple)]/20">
-          <span className="text-xs font-bold text-[var(--color-accent-purple)]">
-            {step.step}
-          </span>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-line bg-ink-950/45 font-code text-xs font-semibold text-text-soft">
+          {step.step || index + 1}
         </div>
 
-        {/* Action & description */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
-              {step.action?.replace(/_/g, " ")}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-semibold text-text">
+              {(step.action || "action").replace(/_/g, " ")}
             </span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 ${colorClass}`}>
-              {step.service}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-text-muted">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 ${meta.className}`}
+            >
+              <Icon className="h-3 w-3" />
+              {step.service || "service"}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Clock3 className="h-3 w-3" />
+              {step.estimated_duration_seconds || 0}s
             </span>
           </div>
         </div>
 
-        {/* Duration */}
-        <div className="flex items-center gap-1 text-[var(--color-text-muted)] shrink-0">
-          <Clock className="w-3 h-3" />
-          <span className="text-[10px]">{step.estimated_duration_seconds}s</span>
-        </div>
-
-        {/* Expand icon */}
         {expanded ? (
-          <ChevronUp className="w-4 h-4 text-[var(--color-text-muted)]" />
+          <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)]" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />
         )}
-      </div>
+      </button>
 
-      {/* Expanded details */}
-      <AnimatePresence>
-        {expanded && (
+      <AnimatePresence initial={false}>
+        {expanded ? (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -83,25 +106,27 @@ function StepCard({ step, index }) {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-3 pt-0 space-y-2 border-t border-white/[0.04]">
-              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed pt-2">
+            <div className="space-y-3 border-t border-line px-3 pb-3 pt-3">
+              <p className="text-xs leading-relaxed text-text-soft">
                 {step.description}
               </p>
-              {step.requires_input && (
-                <div className="flex items-center gap-1.5 text-amber-400">
-                  <Zap className="w-3 h-3" />
-                  <span className="text-[10px] font-medium">Requires your input</span>
+
+              {step.requires_input ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-semibold text-amber">
+                  <Bell className="h-3 w-3" />
+                  Needs input
                 </div>
-              )}
-              {step.fallback && (
-                <div className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <Server className="w-3 h-3" />
-                  <span className="text-[10px]">Fallback: {step.fallback}</span>
+              ) : null}
+
+              {step.fallback ? (
+                <div className="flex items-start gap-2 rounded-xl border border-line bg-ink-950/35 p-2 text-[11px] leading-relaxed text-text-muted">
+                  <Server className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-soft" />
+                  <span>{step.fallback}</span>
                 </div>
-              )}
+              ) : null}
             </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
     </motion.div>
   );
@@ -114,91 +139,94 @@ export default function PlanCards() {
   const approvePlan = useAppStore((s) => s.approvePlan);
   const cancelPlan = useAppStore((s) => s.cancelPlan);
 
-  if (!currentPlan || currentPlan.length === 0) return null;
+  if (!currentPlan?.length) return null;
 
   const totalDuration = currentPlan.reduce(
     (sum, step) => sum + (step.estimated_duration_seconds || 0),
     0
   );
+  const executing = isLoading && loadingStage === "execute";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 30 }}
-      transition={{ type: "spring", stiffness: 200, damping: 20 }}
-      className="shrink-0 px-4 pb-2"
+    <motion.aside
+      initial={{ opacity: 0, x: 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 24 }}
+      transition={{ type: "spring", stiffness: 240, damping: 24 }}
+      className="fixed inset-x-3 bottom-28 z-30 max-h-[58vh] overflow-hidden rounded-[1.5rem] border border-line bg-panel/95 shadow-2xl shadow-black/35 backdrop-blur-2xl xl:static xl:z-auto xl:max-h-none xl:rounded-none xl:border-y-0 xl:border-r-0 xl:bg-ink-950/35 xl:shadow-none"
     >
-      <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[var(--color-accent-purple)]" />
-            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Execution Plan
-            </span>
-            <span className="text-xs text-[var(--color-text-muted)]">
-              {currentPlan.length} steps · ~{totalDuration}s
-            </span>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 border-b border-line px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber/15 text-amber ring-1 ring-amber/25">
+                  <Play className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="font-display text-sm font-semibold text-text">
+                    Execution plan
+                  </h2>
+                  <p className="mt-0.5 text-xs font-medium text-text-muted">
+                    {currentPlan.length} steps, about {totalDuration}s
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={cancelPlan}
+              disabled={isLoading}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-danger/30 hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+              aria-label="Cancel plan"
+              title="Cancel plan"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        {/* Step cards */}
-        <div className="space-y-2 max-h-64 overflow-y-auto pr-1 mb-3">
-          {currentPlan.map((step, i) => (
-            <StepCard key={step.step || i} step={step} index={i} />
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          {currentPlan.map((step, index) => (
+            <StepCard key={`${step.step || index}-${step.action}`} step={step} index={index} />
           ))}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center justify-end gap-2">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={cancelPlan}
-            disabled={isLoading}
-            className="px-4 py-2 rounded-xl text-xs font-medium text-[var(--color-accent-red)] bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            Cancel
-          </motion.button>
+        <div className="shrink-0 border-t border-line p-3">
+          <div className="grid grid-cols-[1fr_1.45fr] gap-2">
+            <button
+              type="button"
+              onClick={cancelPlan}
+              disabled={isLoading}
+              className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white/[0.04] text-xs font-semibold text-text-soft transition hover:border-danger/30 hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+            >
+              <XCircle className="h-4 w-4" />
+              Cancel
+            </button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            disabled={isLoading}
-            className="px-4 py-2 rounded-xl text-xs font-medium text-[var(--color-text-secondary)] bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.1] transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            Edit
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={approvePlan}
-            disabled={isLoading}
-            className="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[var(--color-accent-green)] to-emerald-600 hover:from-emerald-500 hover:to-emerald-700 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading && loadingStage === "execute" ? (
-              <>
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                </motion.div>
-                Executing...
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-3.5 h-3.5" />
-                Approve & Execute
-              </>
-            )}
-          </motion.button>
+            <motion.button
+              type="button"
+              onClick={approvePlan}
+              disabled={isLoading}
+              whileHover={!isLoading ? { scale: 1.02 } : undefined}
+              whileTap={!isLoading ? { scale: 0.98 } : undefined}
+              className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-leaf px-3 text-xs font-bold text-ink-950 shadow-lg shadow-leaf/15 transition hover:bg-text disabled:opacity-60"
+            >
+              {executing ? (
+                <>
+                  <Clock3 className="h-4 w-4 animate-spin" />
+                  Executing
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Approve
+                </>
+              )}
+            </motion.button>
+          </div>
         </div>
       </div>
-    </motion.div>
+    </motion.aside>
   );
 }

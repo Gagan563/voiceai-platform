@@ -1,106 +1,178 @@
-import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
-import { Send, Mic, Loader2 } from "lucide-react";
-import useAppStore from "../store/appStore";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, Send, X, Zap, Globe, Cloud } from "lucide-react";
+import { transcribeAudio } from "@/api/client";
+import useAppStore from "@/store/appStore";
+import VoiceButton from "./VoiceButton";
 
 export default function InputBar() {
   const [input, setInput] = useState("");
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const isLoading = useAppStore((s) => s.isLoading);
   const processUserInput = useAppStore((s) => s.processUserInput);
+  const sttMode = useAppStore((s) => s.sttMode);
+  const toggleSttMode = useAppStore((s) => s.toggleSttMode);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
 
-  // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Re-focus after loading completes
   useEffect(() => {
     if (!isLoading) {
       inputRef.current?.focus();
     }
   }, [isLoading]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const submit = () => {
     const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed || isLoading || isTranscribing) return;
 
     processUserInput(trimmed);
     setInput("");
+    setUploadStatus("");
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    submit();
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submit();
     }
   };
 
+  const handleAudioUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsTranscribing(true);
+    setUploadStatus(`Transcribing ${file.name}`);
+
+    try {
+      const result = await transcribeAudio(file);
+      setInput(result.transcript || "");
+      setUploadStatus("Transcript ready");
+    } catch (err) {
+      setUploadStatus(err.message || "Transcription failed");
+    } finally {
+      setIsTranscribing(false);
+      event.target.value = "";
+      inputRef.current?.focus();
+    }
+  };
+
+  const disabled = isLoading || isTranscribing;
+  const canSend = input.trim().length > 0 && !disabled;
+
   return (
-    <div className="shrink-0 px-4 pb-4 pt-2">
+    <div className="shrink-0 border-t border-line bg-ink-950/45 px-4 py-4 backdrop-blur-xl sm:px-6">
       <motion.form
         onSubmit={handleSubmit}
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="glass rounded-2xl flex items-center gap-2 px-4 py-2.5 max-w-3xl mx-auto transition-all duration-300 focus-within:border-[var(--color-accent-purple)]/40 focus-within:shadow-lg focus-within:shadow-purple-500/10"
+        transition={{ delay: 0.08 }}
+        className="mx-auto max-w-4xl"
       >
-        {/* Mic button (decorative for now) */}
-        <button
-          type="button"
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-accent-purple)] hover:bg-white/[0.06] transition-all duration-200"
-          title="Voice input (coming soon)"
-        >
-          <Mic className="w-4.5 h-4.5" />
-        </button>
+        {uploadStatus ? (
+          <div className="mb-2 flex items-center justify-between rounded-xl border border-line bg-panel/70 px-3 py-2 text-xs font-medium text-text-muted">
+            <span className="truncate">{uploadStatus}</span>
+            <button
+              type="button"
+              onClick={() => setUploadStatus("")}
+              className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-muted transition hover:bg-white/[0.06] hover:text-text"
+              aria-label="Dismiss status"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
 
-        {/* Text input */}
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isLoading}
-          placeholder={
-            isLoading
-              ? "Processing your request..."
-              : "Type a message or describe what you need..."
-          }
-          className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] disabled:opacity-50 disabled:cursor-not-allowed"
-        />
+        <div className="surface flex items-end gap-2 rounded-[1.35rem] p-2 transition focus-within:border-aqua/35 focus-within:shadow-aqua/10">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={handleAudioUpload}
+          />
 
-        {/* Send button */}
-        <motion.button
-          type="submit"
-          disabled={!input.trim() || isLoading}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
-            input.trim() && !isLoading
-              ? "bg-gradient-to-br from-[var(--color-accent-purple)] to-[var(--color-accent-blue)] text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
-              : "text-[var(--color-text-muted)] cursor-not-allowed"
-          }`}
-        >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Send className="w-4 h-4" />
-          )}
-        </motion.button>
+          {/* Voice Button — replaces the old mic/upload button */}
+          <VoiceButton />
+
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            rows={1}
+            placeholder={
+              disabled ? "Processing..." : "Type a command for the assistant"
+            }
+            className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-2 py-3 text-sm leading-relaxed text-text outline-none placeholder:text-text-muted disabled:opacity-60"
+          />
+
+          <motion.button
+            type="submit"
+            disabled={!canSend}
+            whileHover={canSend ? { scale: 1.03 } : undefined}
+            whileTap={canSend ? { scale: 0.97 } : undefined}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition ${
+              canSend
+                ? "bg-aqua text-ink-950 shadow-lg shadow-aqua/20 hover:bg-text"
+                : "border border-line bg-white/[0.04] text-text-muted opacity-70"
+            }`}
+            title="Send"
+            aria-label="Send"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            ) : (
+              <Send className="h-4.5 w-4.5" />
+            )}
+          </motion.button>
+        </div>
+
+        {/* STT Mode Toggle + Hint */}
+        <div className="mt-2 flex items-center justify-between px-1">
+          <motion.button
+            type="button"
+            onClick={toggleSttMode}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-medium text-text-muted transition hover:bg-white/[0.05] hover:text-text"
+            title="Toggle speech-to-text engine"
+          >
+            {sttMode === "browser" ? (
+              <>
+                <Globe className="h-3 w-3 text-emerald-400" />
+                <span>Browser STT</span>
+                <span className="text-emerald-400">(fast)</span>
+              </>
+            ) : (
+              <>
+                <Cloud className="h-3 w-3 text-purple-400" />
+                <span>Whisper API</span>
+                <span className="text-purple-400">(accurate)</span>
+              </>
+            )}
+          </motion.button>
+
+          <p className="text-[10px] text-text-muted">
+            Press{" "}
+            <kbd className="rounded bg-white/[0.06] px-1 py-0.5 text-text">
+              Enter
+            </kbd>{" "}
+            to send · Powered by Claude AI
+          </p>
+        </div>
       </motion.form>
-
-      {/* Subtle hint */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="text-center text-[10px] text-[var(--color-text-muted)] mt-2"
-      >
-        Press <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[var(--color-text-secondary)]">Enter</kbd> to
-        send · Powered by Claude AI
-      </motion.p>
     </div>
   );
 }

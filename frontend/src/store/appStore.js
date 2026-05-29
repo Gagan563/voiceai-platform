@@ -1,40 +1,28 @@
 import { create } from "zustand";
-import { extractIntent, generatePlan, executePlan } from "../api/client";
+import { executePlan, extractIntent, generatePlan } from "@/api/client";
 
-/**
- * Central application store using Zustand.
- *
- * State shape:
- *   messages[]     — conversation history (user + AI messages)
- *   currentPlan    — the latest generated plan (or null)
- *   isLoading      — true while any API request is in flight
- *   loadingStage   — which stage we're in: "intent" | "plan" | "execute" | null
- *   planApproved   — true after user approves a plan
- *   error          — last error message (or null)
- */
+const makeId = (prefix) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizePlan = (plan) => (Array.isArray(plan) ? plan : []);
+
 const useAppStore = create((set, get) => ({
-  // ── State ──
   messages: [],
   currentPlan: null,
+  lastIntent: null,
+  lastExecution: null,
   isLoading: false,
   loadingStage: null,
   planApproved: false,
   error: null,
+  sttMode: "browser", // "browser" (Web Speech API) or "whisper" (OpenAI Whisper)
 
-  // ── Actions ──
-
-  /**
-   * Add a message to the conversation.
-   * @param {"user"|"ai"|"system"} role
-   * @param {string} content
-   * @param {object} [meta] — optional metadata (intent, plan, etc.)
-   */
   addMessage: (role, content, meta = {}) => {
     set((state) => ({
       messages: [
         ...state.messages,
         {
-          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: makeId("msg"),
           role,
           content,
           timestamp: new Date().toISOString(),
@@ -44,89 +32,136 @@ const useAppStore = create((set, get) => ({
     }));
   },
 
-  /**
-   * Main flow: user submits text → extract intent → generate plan.
-   */
   processUserInput: async (text) => {
     const { addMessage } = get();
+    const trimmed = text.trim();
 
-    // Add user message
-    addMessage("user", text);
+    if (!trimmed) return;
 
-    set({ isLoading: true, loadingStage: "intent", error: null, currentPlan: null, planApproved: false });
+    addMessage("user", trimmed);
+
+    set({
+      isLoading: true,
+      loadingStage: "intent",
+      error: null,
+      currentPlan: null,
+      lastIntent: null,
+      planApproved: false,
+    });
 
     try {
-      // Step 1: Extract intent
-      const intentResponse = await extractIntent(text);
+      const intentResponse = await extractIntent(trimmed);
       const intent = intentResponse.intent;
 
-      addMessage("ai", `I understood your request. Here's what I extracted:`, {
+      if (!intent) {
+        throw new Error("The backend did not return an intent.");
+      }
+
+      set({ lastIntent: intent });
+
+      addMessage("assistant", "Intent captured.", {
         type: "intent",
         intent,
       });
 
-      // Step 2: Generate plan
       set({ loadingStage: "plan" });
       const planResponse = await generatePlan(intent);
-      const plan = planResponse.plan;
+      const plan = normalizePlan(planResponse.plan);
 
-      addMessage("ai", `I've created an execution plan with ${plan.length} steps. Please review:`, {
+      if (!plan.length) {
+        throw new Error("The backend did not return a usable plan.");
+      }
+
+      addMessage("assistant", `Plan prepared with ${plan.length} steps.`, {
         type: "plan_intro",
       });
 
-      set({ currentPlan: plan, isLoading: false, loadingStage: null });
+      set({
+        currentPlan: plan,
+        isLoading: false,
+        loadingStage: null,
+      });
     } catch (err) {
-      const errorMsg = err.message || "Something went wrong. Please try again.";
+      const errorMsg = err.hint
+        ? `${err.message} ${err.hint}`
+        : err.message || "Something went wrong. Please try again.";
+
       addMessage("system", errorMsg, { type: "error" });
-      set({ isLoading: false, loadingStage: null, error: errorMsg });
+      set({
+        isLoading: false,
+        loadingStage: null,
+        error: errorMsg,
+      });
     }
   },
 
-  /**
-   * Approve the current plan and send it for execution.
-   */
   approvePlan: async () => {
     const { currentPlan, addMessage } = get();
-    if (!currentPlan) return;
 
-    set({ isLoading: true, loadingStage: "execute" });
+    if (!currentPlan?.length) return;
+
+    set({ isLoading: true, loadingStage: "execute", error: null });
 
     try {
       const result = await executePlan(currentPlan);
+      const executionId = result.execution_id || makeId("exec");
 
-      addMessage("ai", `✅ Plan approved and sent for execution!\nExecution ID: ${result.execution_id}`, {
+      addMessage("assistant", `Execution accepted. ID: ${executionId}`, {
         type: "execution_confirmation",
+        executionId,
       });
 
       set({
         currentPlan: null,
+        lastExecution: result,
         planApproved: true,
         isLoading: false,
         loadingStage: null,
       });
     } catch (err) {
-      const errorMsg = err.message || "Execution failed.";
+      const errorMsg = err.hint
+        ? `${err.message} ${err.hint}`
+        : err.message || "Execution failed.";
+
       addMessage("system", errorMsg, { type: "error" });
-      set({ isLoading: false, loadingStage: null, error: errorMsg });
+      set({
+        isLoading: false,
+        loadingStage: null,
+        error: errorMsg,
+      });
     }
   },
 
-  /**
-   * Cancel the current plan.
-   */
   cancelPlan: () => {
     const { addMessage } = get();
-    addMessage("ai", "Plan cancelled. Let me know if you'd like to try something different.", {
+
+    addMessage("assistant", "Plan cancelled.", {
       type: "plan_cancelled",
     });
+
     set({ currentPlan: null, planApproved: false });
   },
 
-  /**
-   * Clear all conversation messages.
-   */
   clearMessages: () => {
-    set({ messages: [], currentPlan: null, planApproved: false, error: null });
+    set({
+      messages: [],
+      currentPlan: null,
+      lastIntent: null,
+      lastExecution: null,
+      planApproved: false,
+      error: null,
+    });
+  },
+
+  /** Toggle between "browser" and "whisper" STT modes */
+  toggleSttMode: () => {
+    set((state) => ({
+      sttMode: state.sttMode === "browser" ? "whisper" : "browser",
+    }));
+  },
+
+  setSttMode: (mode) => {
+    set({ sttMode: mode });
   },
 }));
 

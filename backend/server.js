@@ -11,6 +11,7 @@ const multer = require("multer");
 const Anthropic = require("@anthropic-ai/sdk");
 const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("./prompts");
 const { initializeSocket } = require("./socket");
+const transcribeRouter = require("./routes/transcribe");
 
 // ── Config ──
 const PORT = process.env.PORT || 3001;
@@ -70,41 +71,9 @@ app.get("/health", (req, res) => {
 });
 
 /**
- * POST /transcribe
- * Accepts audio file upload, returns transcript text.
- * STUB — will be connected to Whisper / Deepgram / AssemblyAI in a future phase.
+ * POST /transcribe — Audio → Text (Whisper API or stub)
  */
-app.post("/transcribe", upload.single("audio"), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        error: "No audio file provided",
-        hint: "Send a multipart/form-data request with an 'audio' field containing a WAV, MP3, OGG, WEBM, or FLAC file.",
-      });
-    }
-
-    console.log(`[Transcribe] Received audio: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB, ${req.file.mimetype})`);
-
-    // STUB: Return a simulated transcript
-    // In production, this will call Whisper API, Deepgram, or AssemblyAI
-    res.json({
-      success: true,
-      transcript: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget",
-      confidence: 0.94,
-      language: "en",
-      duration_seconds: 4.2,
-      metadata: {
-        filename: req.file.originalname,
-        size_bytes: req.file.size,
-        mimetype: req.file.mimetype,
-        note: "STUB — This is a simulated transcript. Real transcription will be implemented in a future phase.",
-      },
-    });
-  } catch (error) {
-    console.error("[Transcribe] Error:", error.message);
-    res.status(500).json({ error: "Transcription failed", details: error.message });
-  }
-});
+app.use("/transcribe", transcribeRouter);
 
 /**
  * POST /intent
@@ -328,7 +297,7 @@ server.listen(PORT, () => {
   console.log("╠══════════════════════════════════════════════╣");
   console.log("║  Endpoints:                                  ║");
   console.log("║    GET  /health     — Health check            ║");
-  console.log("║    POST /transcribe — Audio → Text (stub)     ║");
+  console.log("║    POST /transcribe — Audio → Text (Whisper)   ║");
   console.log("║    POST /intent     — Text → Intent JSON      ║");
   console.log("║    POST /plan       — Intent → Step Plan      ║");
   console.log("║    POST /execute    — Plan → Execution (stub) ║");
