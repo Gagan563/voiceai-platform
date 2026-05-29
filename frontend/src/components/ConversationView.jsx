@@ -285,14 +285,14 @@ export default function ConversationView({ prompts = [], onPrompt }) {
       setSpeakingMessageId(lastMsg.id);
       activeTTS.speak(lastMsg.content);
     }
-  }, [messages, settings.ttsEnabled]);
+  }, [activeTTS, messages, setSpeakingMessageId, settings.ttsEnabled]);
 
   // Clear speakingId when speech ends
   useEffect(() => {
     if (!activeTTS.isSpeaking && speakingId) {
       setSpeakingMessageId(null);
     }
-  }, [activeTTS.isSpeaking, speakingId]);
+  }, [activeTTS.isSpeaking, setSpeakingMessageId, speakingId]);
 
   const handleStopSpeaking = () => {
     activeTTS.stop();

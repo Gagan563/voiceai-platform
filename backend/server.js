@@ -13,6 +13,8 @@ const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("./prompts"
 const { initializeSocket } = require("./socket");
 const transcribeRouter = require("./routes/transcribe");
 const ttsRouter = require("./routes/tts");
+const memoriesRouter = require("./routes/memories");
+const { recallMemory, extractFacts, saveMemory, ensureDefaultUser } = require("./services/memory");
 
 // ── Config ──
 const PORT = process.env.PORT || 3001;
@@ -82,13 +84,18 @@ app.use("/transcribe", transcribeRouter);
 app.use("/tts", ttsRouter);
 
 /**
+ * Memory CRUD routes
+ */
+app.use("/memories", memoriesRouter);
+
+/**
  * POST /intent
  * Takes { text }, sends to Claude with intent extraction prompt.
  * Returns structured JSON: goal, action_type, entities, constraints, missing_info, confidence
  */
 app.post("/intent", async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, userId } = req.body;
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({
@@ -98,12 +105,28 @@ app.post("/intent", async (req, res) => {
       });
     }
 
+    const currentUserId = userId || "default-user";
     console.log(`[Intent] Processing: "${text.substring(0, 80)}${text.length > 80 ? "..." : ""}"`);
+
+    // ── Recall relevant memories ──
+    let memoriesContext = "";
+    try {
+      const memories = await recallMemory(currentUserId, text, 5);
+      if (memories.length > 0) {
+        memoriesContext = `\n\nRelevant context from previous sessions:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+        console.log(`[Intent] Injecting ${memories.length} memories into prompt`);
+      }
+    } catch (err) {
+      console.warn("[Intent] Memory recall failed (continuing without):", err.message);
+    }
+
+    // ── Extract intent with memory-augmented prompt ──
+    const systemPrompt = INTENT_EXTRACTION_PROMPT + memoriesContext;
 
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      system: INTENT_EXTRACTION_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: text }],
     });
 
@@ -124,6 +147,19 @@ app.post("/intent", async (req, res) => {
 
     console.log(`[Intent] Extracted: action_type="${intent.action_type}", confidence=${intent.confidence}`);
 
+    // ── Extract and save facts asynchronously (don't block response) ──
+    setImmediate(async () => {
+      try {
+        const conversationText = `User said: ${text}\nAI extracted intent: ${JSON.stringify(intent)}`;
+        const facts = await extractFacts(conversationText);
+        for (const fact of facts) {
+          await saveMemory(currentUserId, fact);
+        }
+      } catch (err) {
+        console.warn("[Intent] Background fact extraction failed:", err.message);
+      }
+    });
+
     res.json({
       success: true,
       intent,
@@ -131,6 +167,7 @@ app.post("/intent", async (req, res) => {
         model: "claude-sonnet-4-20250514",
         input_tokens: message.usage?.input_tokens,
         output_tokens: message.usage?.output_tokens,
+        memories_used: memoriesContext ? true : false,
       },
     });
   } catch (error) {
@@ -307,8 +344,15 @@ server.listen(PORT, () => {
   console.log("║    POST /intent     — Text → Intent JSON      ║");
   console.log("║    POST /plan       — Intent → Step Plan      ║");
   console.log("║    POST /execute    — Plan → Execution (stub) ║");
+  console.log("║    POST /tts        — Text → Speech            ║");
+  console.log("║    GET  /memories   — List user memories       ║");
   console.log("╚══════════════════════════════════════════════╝");
   console.log("");
+
+  // Ensure default user exists for single-user mode
+  ensureDefaultUser()
+    .then(() => console.log("[Memory] Default user ready"))
+    .catch((err) => console.warn("[Memory] Could not create default user:", err.message));
 });
 
 module.exports = { app, server };

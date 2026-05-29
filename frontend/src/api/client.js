@@ -252,22 +252,31 @@ export async function transcribeAudio(audioBlob) {
   });
 }
 
-export async function getMemories() {
+export async function getMemories(userId = "default-user") {
   if (USE_MOCK) {
     await delay(300, 600);
     return { memories: [] };
   }
 
-  return apiClient.get("/memories");
+  return apiClient.get(`/memories/${userId}`);
 }
 
-export async function deleteMemory(id) {
+export async function deleteMemory(userId = "default-user", memoryId) {
   if (USE_MOCK) {
     await delay(200, 400);
     return { success: true };
   }
 
-  return apiClient.delete(`/memories/${id}`);
+  return apiClient.delete(`/memories/${userId}/${memoryId}`);
+}
+
+export async function clearAllMemories(userId = "default-user") {
+  if (USE_MOCK) {
+    await delay(300, 500);
+    return { success: true, deleted: 0 };
+  }
+
+  return apiClient.delete(`/memories/${userId}/all`);
 }
 
 export async function testConnection(key) {

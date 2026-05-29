@@ -1,153 +1,191 @@
-import { useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Mic, MicOff, Loader2, AlertCircle } from "lucide-react";
-import useVoice from "../hooks/useVoice";
-import useWhisper from "../hooks/useWhisper";
-import useAppStore from "../store/appStore";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2, Mic, Square } from "lucide-react";
+import { useAppStore } from "@/store/appStore";
 
-export default function VoiceButton() {
-  const isLoading = useAppStore((s) => s.isLoading);
-  const sttMode = useAppStore((s) => s.sttMode);
-  const processUserInput = useAppStore((s) => s.processUserInput);
+export const VoiceButton = () => {
+  const isRecording = useAppStore((state) => state.isRecording);
+  const isLoading = useAppStore((state) => state.isLoading);
+  const setRecording = useAppStore((state) => state.setRecording);
+  const submitInput = useAppStore((state) => state.submitInput);
 
-  // Use the appropriate hook based on STT mode
-  const voice = useVoice();
-  const whisper = useWhisper();
+  const recognitionRef = useRef(null);
+  const silenceTimer = useRef(null);
+  const finalRef = useRef("");
+  const interimRef = useRef("");
+  const [interim, setInterim] = useState("");
+  const [error, setError] = useState("");
 
-  const activeHook = sttMode === "whisper" ? whisper : voice;
-  const {
-    isRecording,
-    transcript,
-    startRecording,
-    stopRecording,
-    error,
-    isSupported,
-  } = activeHook;
+  const SpeechRecognition =
+    typeof window !== "undefined" &&
+    (window.SpeechRecognition || window.webkitSpeechRecognition);
 
-  const isTranscribing = sttMode === "whisper" ? whisper.isTranscribing : false;
+  const clearSilence = () => {
+    if (silenceTimer.current) clearTimeout(silenceTimer.current);
+  };
 
-  /**
-   * When recording stops and we have a transcript, send it through the intent flow.
-   */
-  useEffect(() => {
-    if (!isRecording && !isTranscribing && transcript && transcript.trim()) {
-      processUserInput(transcript.trim());
+  const finalize = () => {
+    clearSilence();
+    setRecording(false);
+
+    const text = `${finalRef.current} ${interimRef.current}`.trim();
+    finalRef.current = "";
+    interimRef.current = "";
+    setInterim("");
+    recognitionRef.current = null;
+
+    if (text) submitInput(text);
+  };
+
+  const resetSilence = () => {
+    clearSilence();
+    silenceTimer.current = setTimeout(() => {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Recognition may already be stopped by the browser.
+      }
+    }, 2000);
+  };
+
+  const start = () => {
+    if (!SpeechRecognition) {
+      setError("Voice input is not supported in this browser. Please type instead.");
+      return;
     }
-  }, [isRecording, isTranscribing, processUserInput, transcript]);
 
-  const handleToggle = useCallback(() => {
-    if (isLoading || isTranscribing) return;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    finalRef.current = "";
+    interimRef.current = "";
+    setInterim("");
+    setError("");
+
+    recognition.onresult = (event) => {
+      let interimText = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const text = event.results[index][0].transcript;
+
+        if (event.results[index].isFinal) {
+          finalRef.current += `${text} `;
+        } else {
+          interimText += text;
+        }
+      }
+
+      interimRef.current = interimText;
+      setInterim(interimText);
+      resetSilence();
+    };
+
+    recognition.onerror = (event) => {
+      clearSilence();
+      setRecording(false);
+
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setError("Microphone access is needed. Please allow it in your browser settings.");
+      }
+    };
+
+    recognition.onend = () => finalize();
+
+    recognitionRef.current = recognition;
+    setRecording(true);
+
+    try {
+      recognition.start();
+      resetSilence();
+    } catch {
+      setRecording(false);
+      setError("Could not start voice input. Please try again.");
+    }
+  };
+
+  const handleClick = () => {
+    if (isLoading) return;
 
     if (isRecording) {
-      stopRecording();
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Recognition may already be stopped by the browser.
+      }
     } else {
-      startRecording();
+      start();
     }
-  }, [isRecording, isLoading, isTranscribing, startRecording, stopRecording]);
+  };
 
-  const disabled = isLoading || isTranscribing || !isSupported;
+  useEffect(() => () => clearSilence(), []);
+
+  const state = isLoading ? "processing" : isRecording ? "recording" : "idle";
 
   return (
-    <div className="relative flex flex-col items-center">
-      {/* Live transcript preview — shown above the button while recording */}
+    <div className="relative flex items-center justify-center">
       <AnimatePresence>
-        {(isRecording || isTranscribing) && (
+        {isRecording ? (
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-64 glass rounded-xl px-3 py-2 z-10"
+            className="absolute bottom-[72px] left-1/2 w-max max-w-[60vw] -translate-x-1/2 rounded-2xl border border-vox-border bg-vox-s2 px-4 py-2 text-sm text-vox-text shadow-lg"
+            data-testid="voice-live-transcript"
           >
-            {isTranscribing ? (
-              <div className="flex items-center gap-2 justify-center">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-accent-purple)]" />
-                <span className="text-xs text-[var(--color-text-muted)]">
-                  Transcribing with Whisper...
-                </span>
-              </div>
-            ) : transcript ? (
-              <p className="text-xs text-[var(--color-text-primary)] text-center leading-relaxed">
-                {transcript}
-              </p>
-            ) : (
-              <div className="flex items-center gap-2 justify-center">
-                <div className="dot-loader">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-                <span className="text-xs text-[var(--color-text-muted)]">Listening...</span>
-              </div>
-            )}
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-vox-cancel animate-pulse" />
+              {interim || "Listening..."}
+            </span>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Error message */}
       <AnimatePresence>
-        {error && !isRecording && (
+        {error && !isRecording ? (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-72 bg-red-500/15 border border-red-500/30 rounded-xl px-3 py-2 z-10 flex items-start gap-2"
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            className="absolute bottom-[72px] left-1/2 w-64 -translate-x-1/2 rounded-2xl border border-vox-cancel/30 bg-vox-cancel/10 px-4 py-2 text-center text-xs text-vox-cancel shadow-lg"
           >
-            <AlertCircle className="w-3.5 h-3.5 text-[var(--color-accent-red)] shrink-0 mt-0.5" />
-            <p className="text-[11px] text-[var(--color-accent-red)] leading-relaxed">{error}</p>
+            {error}
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Mic button */}
+      {state === "recording" ? (
+        <span className="absolute inset-0 rounded-full animate-glow-pulse" />
+      ) : null}
+
       <motion.button
         type="button"
-        onClick={handleToggle}
-        disabled={disabled}
-        whileHover={!disabled ? { scale: 1.08 } : {}}
-        whileTap={!disabled ? { scale: 0.92 } : {}}
-        className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
-          isRecording
-            ? "bg-[var(--color-accent-red)] text-white shadow-lg shadow-red-500/30"
-            : isTranscribing
-            ? "bg-[var(--color-accent-purple)]/20 text-[var(--color-accent-purple)]"
-            : disabled
-            ? "text-[var(--color-text-muted)] opacity-40 cursor-not-allowed"
-            : "text-[var(--color-text-muted)] hover:text-[var(--color-accent-purple)] hover:bg-white/[0.06]"
-        }`}
-        title={
-          !isSupported
-            ? "Voice input not supported in this browser"
-            : isRecording
-            ? "Stop recording"
-            : isTranscribing
-            ? "Transcribing..."
-            : `Start recording (${sttMode === "whisper" ? "Whisper" : "Browser STT"})`
-        }
+        onClick={handleClick}
+        whileTap={{ scale: 0.92 }}
+        animate={{ scale: state === "recording" ? 1.08 : 1 }}
+        className={[
+          "relative grid h-14 w-14 place-items-center rounded-full outline-none transition-colors duration-300",
+          state === "recording"
+            ? "bg-vox-primary text-white shadow-[0_0_40px_var(--vox-primary-glow)]"
+            : "border border-vox-border bg-vox-s2 text-vox-muted hover:border-vox-primary/50 hover:text-vox-primary",
+        ].join(" ")}
+        data-testid="voice-record-button"
+        aria-label={isRecording ? "Stop recording" : "Start recording"}
       >
-        {/* Pulse rings while recording */}
-        {isRecording && (
-          <>
-            <motion.span
-              className="absolute inset-0 rounded-xl bg-[var(--color-accent-red)]"
-              animate={{ scale: [1, 1.5], opacity: [0.4, 0] }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: "easeOut" }}
-            />
-            <motion.span
-              className="absolute inset-0 rounded-xl bg-[var(--color-accent-red)]"
-              animate={{ scale: [1, 1.8], opacity: [0.2, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut", delay: 0.3 }}
-            />
-          </>
+        {state === "processing" ? (
+          <Loader2 size={22} className="animate-spin text-vox-primary" />
+        ) : state === "recording" ? (
+          <Square size={18} fill="currentColor" />
+        ) : (
+          <Mic size={22} />
         )}
 
-        {isTranscribing ? (
-          <Loader2 className="w-4.5 h-4.5 animate-spin relative z-10" />
-        ) : isRecording ? (
-          <MicOff className="w-4.5 h-4.5 relative z-10" />
-        ) : (
-          <Mic className="w-4.5 h-4.5" />
-        )}
+        {state === "recording" ? (
+          <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-vox-cancel ring-2 ring-vox-bg" />
+        ) : null}
       </motion.button>
     </div>
   );
-}
+};
+
+export default VoiceButton;

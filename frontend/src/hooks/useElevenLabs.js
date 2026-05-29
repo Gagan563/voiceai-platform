@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import client from "@/api/client";
 
 /**
  * Premium TTS hook using ElevenLabs API via the backend.
@@ -21,6 +20,25 @@ export default function useElevenLabs() {
   const sourceRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  const stop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.stop();
+      } catch {
+        // Audio source may already have ended.
+      }
+      sourceRef.current = null;
+    }
+
+    setIsSpeaking(false);
+    setIsLoading(false);
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -28,10 +46,12 @@ export default function useElevenLabs() {
       if (audioContextRef.current) {
         try {
           audioContextRef.current.close();
-        } catch {}
+        } catch {
+          // AudioContext may already be closed by the browser.
+        }
       }
     };
-  }, []);
+  }, [stop]);
 
   /**
    * Get or create the AudioContext (lazy init to comply with autoplay policies).
@@ -50,79 +70,62 @@ export default function useElevenLabs() {
   /**
    * Speak the given text using ElevenLabs TTS via the backend.
    */
-  const speak = useCallback(async (text) => {
-    if (!text) return;
+  const speak = useCallback(
+    async (text) => {
+      if (!text) return;
 
-    // Cancel any current playback
-    stop();
+      // Cancel any current playback
+      stop();
 
-    setIsLoading(true);
-    setError(null);
+      setIsLoading(true);
+      setError(null);
 
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-    try {
-      // Fetch audio from our backend TTS route
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: abortController.signal,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `TTS request failed: ${response.status}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      setIsLoading(false);
-
-      // Decode and play the audio
-      const audioContext = getAudioContext();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-
-      source.onended = () => {
-        setIsSpeaking(false);
-        sourceRef.current = null;
-      };
-
-      sourceRef.current = source;
-      setIsSpeaking(true);
-      source.start(0);
-    } catch (err) {
-      if (err.name === "AbortError") return; // Intentional cancel
-      console.error("[useElevenLabs] Error:", err.message);
-      setError(err.message);
-      setIsLoading(false);
-      setIsSpeaking(false);
-    }
-  }, []);
-
-  /**
-   * Stop playback immediately.
-   */
-  const stop = useCallback(() => {
-    // Abort pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    // Stop audio playback
-    if (sourceRef.current) {
       try {
-        sourceRef.current.stop();
-      } catch {}
-      sourceRef.current = null;
-    }
-    setIsSpeaking(false);
-    setIsLoading(false);
-  }, []);
+        // Fetch audio from our backend TTS route
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `TTS request failed: ${response.status}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        setIsLoading(false);
+
+        // Decode and play the audio
+        const audioContext = getAudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+
+        source.onended = () => {
+          setIsSpeaking(false);
+          sourceRef.current = null;
+        };
+
+        sourceRef.current = source;
+        setIsSpeaking(true);
+        source.start(0);
+      } catch (err) {
+        if (err.name === "AbortError") return; // Intentional cancel
+        console.error("[useElevenLabs] Error:", err.message);
+        setError(err.message);
+        setIsLoading(false);
+        setIsSpeaking(false);
+      }
+    },
+    [stop]
+  );
 
   return {
     speak,

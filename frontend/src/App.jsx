@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
-  AudioLines,
   Bot,
+  Brain,
   CheckCircle2,
   CircleAlert,
   DatabaseZap,
@@ -22,6 +22,8 @@ import {
 import ConversationView from "@/components/ConversationView";
 import InputBar from "@/components/InputBar";
 import PlanCards from "@/components/PlanCards";
+import MemoryView from "@/components/MemoryView";
+import VoxLogo from "@/components/VoxLogo";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import "./App.css";
@@ -79,18 +81,11 @@ function StatusPill({ online }) {
 function Sidebar({ backendOnline, onPrompt }) {
   return (
     <aside className="hidden min-h-0 border-r border-line bg-ink-950/55 px-4 py-5 lg:flex lg:flex-col">
-      <div className="flex items-center gap-3 px-1">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-text text-ink-950 shadow-lg shadow-black/20">
-          <AudioLines className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="font-display text-base font-semibold tracking-[0.01em] text-text">
-            VoxMind
-          </h1>
-          <p className="text-xs font-medium text-text-muted">
-            Voice control workspace
-          </p>
-        </div>
+      <div className="px-1">
+        <VoxLogo size={44} />
+        <p className="mt-2 text-xs font-medium text-text-muted">
+          Voice control workspace
+        </p>
       </div>
 
       <div className="mt-6 rounded-2xl border border-line bg-panel/70 p-3">
@@ -151,6 +146,7 @@ function Sidebar({ backendOnline, onPrompt }) {
 
 export default function App() {
   const [backendOnline, setBackendOnline] = useState(null);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const messages = useAppStore((s) => s.messages);
   const currentPlan = useAppStore((s) => s.currentPlan);
   const isLoading = useAppStore((s) => s.isLoading);
@@ -259,6 +255,19 @@ export default function App() {
                     <Trash2 className="h-4 w-4" />
                   </motion.button>
                 )}
+
+                {/* Memory Bank button */}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setMemoryPanelOpen(true)}
+                  className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition hover:border-brand/25 hover:bg-brand/10 hover:text-brand"
+                  title="Open Memory Bank"
+                >
+                  <Brain className="h-3.5 w-3.5" />
+                  Memory
+                </motion.button>
               </div>
             </div>
           </header>
@@ -275,6 +284,12 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {/* Memory Panel */}
+      <MemoryView
+        isOpen={memoryPanelOpen}
+        onClose={() => setMemoryPanelOpen(false)}
+      />
 
       <AnimatePresence>
         {backendOnline === false && (
