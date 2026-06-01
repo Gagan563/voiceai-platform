@@ -1,10 +1,30 @@
-# Mobile App
+# VoxMind Mobile
 
-The mobile app has not been implemented yet. Use this folder for the React Native client when mobile work begins.
+React Native client for the VoxMind backend.
 
-Expected first milestones:
+## Current Features
 
-1. Create a React Native or Expo app.
-2. Reuse shared API types from `../shared`.
-3. Connect to the backend intent, plan, memories, and transcription APIs.
-4. Add native microphone permissions and push/reminder permissions.
+- Bottom-tab navigation.
+- Home screen connected to backend health, intent, plan, execute, and transcription APIs.
+- Modules screen connected to search, finance quote, translation, and MCP connector APIs.
+- Settings screen for backend URL/API notes.
+
+## Backend URL
+
+The mobile API client defaults to:
+
+```text
+http://10.0.2.2:3001
+```
+
+Use this for the Android emulator. For iOS simulator or a real device, update `src/services/api.js` to `http://localhost:3001` or your machine LAN IP.
+
+## Run
+
+```bash
+npm install
+npm start
+npm run android
+```
+
+Real voice transcription still requires `OPENAI_API_KEY` in `../backend/.env`.

@@ -10,8 +10,16 @@ VoxMind is a voice-first AI workspace with a React frontend, Express backend, Wh
 - Intent extraction and plan generation run through a hybrid backend AI router with provider circuit breakers.
 - Plan approval runs `/execute` and saves results into the right module workspace.
 - Plan cards support partial approval, so you can run only selected steps.
+- Low-confidence intent detection asks one clarifying question before planning.
+- Plan steps include confidence scores and safe parallel execution batches.
+- Execution includes a self-review with issues, corrections, and confidence.
+- Saved routines are available through the web Routines panel and `/routines` API.
+- Image and screen context can be attached through `/context/image` when Gemini vision is configured.
 - 12 module surfaces are available: chat, tasks, writing, search, health, finance, learning, home, travel, media, translate, and business.
 - MCP-style connector discovery and guarded connector calls are available at `/mcp/connectors` and `/mcp/call`.
+- Unconfigured connectors return useful demo responses by default with `CONNECTOR_DEMO_MODE=true`.
+- Memory works with Postgres + pgvector when configured and falls back to a local JSON store otherwise.
+- Backend status is available at `/status`.
 - Settings, memory, history, onboarding, toast notifications, and UI error boundary are present.
 - Electron packaging works after building the frontend.
 
@@ -75,6 +83,14 @@ SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
 ```
 
+Set `CONNECTOR_DEMO_MODE=false` if you want unconfigured connectors to fail instead of returning demo data.
+
+For no-database local development, keep:
+
+```ini
+VOICEAI_MEMORY_MODE=local
+```
+
 ## Run Web App
 
 Start backend:
@@ -101,6 +117,37 @@ Backend health:
 
 ```text
 http://localhost:3001/health
+```
+
+Backend service status:
+
+```text
+http://localhost:3001/status
+```
+
+Useful automation/context routes:
+
+```text
+GET    /routines
+POST   /routines
+POST   /routines/:id/run
+POST   /context/image
+```
+
+## Mobile
+
+The React Native client in `mobile/` is dependency-resolved and points Android emulators to:
+
+```text
+http://10.0.2.2:3001
+```
+
+Run:
+
+```bash
+cd mobile
+npm install
+npm start
 ```
 
 ## Desktop

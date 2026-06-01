@@ -4,6 +4,7 @@ import {
   Activity,
   Bot,
   Brain,
+  CalendarClock,
   CheckCircle2,
   Cpu,
   DatabaseZap,
@@ -29,6 +30,7 @@ import VoxLogo from "@/components/VoxLogo";
 import HistoryPanel from "@/components/HistoryPanel";
 import Onboarding from "@/components/Onboarding";
 import SettingsPanel from "@/components/SettingsPanel";
+import RoutinesPanel from "@/components/RoutinesPanel";
 import ToastStack from "@/components/ToastStack";
 import ModuleWorkspace from "@/modules/ModuleWorkspace";
 import { healthCheck } from "@/api/client";
@@ -171,6 +173,7 @@ export default function App() {
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+  const [routinesPanelOpen, setRoutinesPanelOpen] = useState(false);
   const messages = useAppStore((s) => s.messages);
   const currentPlan = useAppStore((s) => s.currentPlan);
   const isLoading = useAppStore((s) => s.isLoading);
@@ -233,6 +236,18 @@ export default function App() {
 
               <div className="flex shrink-0 items-center gap-2">
                 <VoiceActivation />
+
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setRoutinesPanelOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-leaf/25 hover:bg-leaf/10 hover:text-leaf"
+                  title="Open Routines"
+                  aria-label="Open Routines"
+                >
+                  <CalendarClock className="h-4 w-4" />
+                </motion.button>
 
                 <motion.button
                   type="button"
@@ -377,6 +392,10 @@ export default function App() {
       <HistoryPanel
         isOpen={historyPanelOpen}
         onClose={() => setHistoryPanelOpen(false)}
+      />
+      <RoutinesPanel
+        isOpen={routinesPanelOpen}
+        onClose={() => setRoutinesPanelOpen(false)}
       />
       <SettingsPanel
         isOpen={settingsPanelOpen}

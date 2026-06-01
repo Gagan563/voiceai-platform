@@ -1,19 +1,22 @@
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUp, Bot, FileUp } from "lucide-react";
+import { ArrowUp, Bot, FileUp, ImagePlus, MonitorUp } from "lucide-react";
 import { VoiceButton } from "@/components/VoiceButton";
+import { analyzeContextImage } from "@/api/client";
 import { useAppStore } from "@/store/appStore";
 
 export const InputBar = () => {
   const [text, setText] = useState("");
+  const [contextBusy, setContextBusy] = useState(false);
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
   const isLoading = useAppStore((state) => state.isLoading);
   const viewingSessionId = useAppStore((state) => state.viewingSessionId);
   const submitInput = useAppStore((state) => state.submitInput);
   const settings = useAppStore((state) => state.settings);
   const toggleAutopilot = useAppStore((state) => state.toggleAutopilot);
 
-  const disabled = isLoading || Boolean(viewingSessionId);
+  const disabled = isLoading || contextBusy || Boolean(viewingSessionId);
 
   const send = () => {
     if (disabled || !text.trim()) return;
@@ -44,6 +47,68 @@ export const InputBar = () => {
       submitInput(
         `Requirements file: ${file.name}\n\nBuild an autonomous AI product from this uploaded requirement.`
       );
+    }
+  };
+
+  const submitImageContext = async (file, type = "image") => {
+    if (!file || disabled) return;
+
+    setContextBusy(true);
+    try {
+      const result = await analyzeContextImage(
+        file,
+        type === "screen"
+          ? "Summarize this screen and identify what action the user may want next."
+          : "Summarize this image for my next voice command.",
+        type
+      );
+      submitInput(
+        `${type === "screen" ? "Screen" : "Image"} context from ${file.name}:\n\n${result.analysis}`
+      );
+    } catch (error) {
+      submitInput(
+        `${type === "screen" ? "Screen" : "Image"} context upload failed: ${error.message || "unknown error"}`
+      );
+    } finally {
+      setContextBusy(false);
+    }
+  };
+
+  const handleImage = async (event) => {
+    const [file] = Array.from(event.target.files || []);
+    event.target.value = "";
+    await submitImageContext(file, "image");
+  };
+
+  const captureScreen = async () => {
+    if (disabled || !navigator.mediaDevices?.getDisplayMedia) return;
+
+    setContextBusy(true);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("Could not capture screen image.");
+
+      const file = new File([blob], `screen-${Date.now()}.png`, { type: "image/png" });
+      await submitImageContext(file, "screen");
+    } catch (error) {
+      if (error?.name !== "NotAllowedError") {
+        submitInput(`Screen context capture failed: ${error.message || "unknown error"}`);
+      }
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      setContextBusy(false);
     }
   };
 
@@ -82,6 +147,14 @@ export const InputBar = () => {
             onChange={handleFile}
           />
 
+          <input
+            ref={imageInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            onChange={handleImage}
+          />
+
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -91,6 +164,28 @@ export const InputBar = () => {
             title="Upload requirements"
           >
             <FileUp size={19} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={disabled}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-vox-border bg-white/[0.04] text-vox-muted transition hover:border-brand/35 hover:bg-brand/10 hover:text-brand disabled:opacity-50"
+            aria-label="Attach image context"
+            title="Attach image context"
+          >
+            <ImagePlus size={19} />
+          </button>
+
+          <button
+            type="button"
+            onClick={captureScreen}
+            disabled={disabled || !navigator.mediaDevices?.getDisplayMedia}
+            className="hidden h-11 w-11 shrink-0 place-items-center rounded-xl border border-vox-border bg-white/[0.04] text-vox-muted transition hover:border-aqua/35 hover:bg-aqua/10 hover:text-aqua disabled:opacity-50 sm:grid"
+            aria-label="Capture screen context"
+            title="Capture screen context"
+          >
+            <MonitorUp size={19} />
           </button>
 
           <input

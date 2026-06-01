@@ -5,6 +5,7 @@ import {
   executePlan,
   extractIntent,
   generatePlan,
+  getAgentOutputUrl,
 } from "@/api/client";
 import {
   initialMemories,
@@ -60,6 +61,8 @@ const normalizePlan = (response) => {
     requires_input: Boolean(step.requires_input),
     estimated_duration_seconds: step.estimated_duration_seconds || 2 + index,
     fallback: step.fallback || "Ask for confirmation and retry this step",
+    confidence: Number.isFinite(Number(step.confidence)) ? Number(step.confidence) : 0.72,
+    parallel_group: step.parallel_group || null,
   }));
 };
 
@@ -160,11 +163,18 @@ const inferModule = (intent = {}, sourceText = "") => {
   return "chat";
 };
 
-const createPreviewArtifact = ({ intent, sourceText, plan = [], status = "planned" }) => {
+const createPreviewArtifact = ({
+  intent,
+  sourceText,
+  plan = [],
+  status = "planned",
+  execution = null,
+}) => {
   const goal = intent?.goal || sourceText || "Build an autonomous AI platform";
   const title = titleFromGoal(goal);
   const featureHints = extractFeatureHints(`${goal} ${sourceText}`);
   const planActions = plan.map((step) => step.action?.replace(/_/g, " ")).filter(Boolean);
+  const previewFile = execution?.agent?.preview_file || execution?.preview_file || null;
 
   return {
     id: uid(),
@@ -209,6 +219,9 @@ const createPreviewArtifact = ({ intent, sourceText, plan = [], status = "planne
       "Browser automation",
       "Connector layer",
     ],
+    previewFile,
+    previewUrl: getAgentOutputUrl(previewFile),
+    agentSummary: execution?.agent?.summary || null,
     updatedAt: new Date().toISOString(),
   };
 };
@@ -265,6 +278,7 @@ export const useAppStore = create(
       moduleRecords: {},
       loadingStage: null,
       planApproved: false,
+      pendingClarification: null,
       error: null,
 
       setRecording: (value) => set({ isRecording: value }),
@@ -335,6 +349,10 @@ export const useAppStore = create(
       submitInput: async (text) => {
         const clean = (text || "").trim();
         if (!clean || get().isLoading) return;
+        const pendingClarification = get().pendingClarification;
+        const effectiveText = pendingClarification
+          ? `${pendingClarification.originalText}\n\nClarification answer: ${clean}`
+          : clean;
         const casualReply = getCasualReply(clean);
 
         const userMsg = normalizeMessage({
@@ -353,7 +371,7 @@ export const useAppStore = create(
           planApproved: false,
         }));
 
-        if (casualReply) {
+        if (!pendingClarification && casualReply) {
           get().addMessage({
             role: "assistant",
             text: casualReply,
@@ -371,11 +389,11 @@ export const useAppStore = create(
         });
 
         try {
-          const intentResponse = await extractIntent(clean);
+          const intentResponse = await extractIntent(effectiveText);
           const rawIntent = intentResponse.intent || intentResponse;
           const intent = {
             ...rawIntent,
-            module: inferModule(rawIntent, clean),
+            module: inferModule(rawIntent, effectiveText),
           };
 
           if (!intent?.goal) {
@@ -392,6 +410,23 @@ export const useAppStore = create(
           });
 
           set({ lastIntent: intent, loadingStage: "plan" });
+
+          if (!pendingClarification && intent.clarification?.required) {
+            const suggestion =
+              intent.clarification.question ||
+              "I made a sensible default. You can adjust it after I show the result.";
+            get().addMessage({
+              role: "assistant",
+              text: `Suggestion: ${suggestion}`,
+              content: `Suggestion: ${suggestion}`,
+              type: "suggestion",
+              timestamp: Date.now(),
+            });
+          }
+
+          if (pendingClarification) {
+            set({ pendingClarification: null });
+          }
 
           const planResponse = await generatePlan(intent);
           const plan = normalizePlan(planResponse);
@@ -479,7 +514,8 @@ export const useAppStore = create(
         try {
           const result = await executePlan(plan);
           const executionId = result.execution_id || `exec_${uid()}`;
-          const message = result.message || "Done. I finished the safe preview run.";
+          const reviewSummary = result.review?.summary ? ` Review: ${result.review.summary}` : "";
+          const message = `${result.message || "Done. I finished the safe preview run."}${reviewSummary}`;
           const intent = get().lastIntent;
           const sourceText =
             get().messages.findLast?.((message) => message.role === "user")?.content ||
@@ -496,6 +532,7 @@ export const useAppStore = create(
             status: "completed",
             type: "execution_confirmation",
             executionId,
+            execution: result,
             plan,
             fullPlan,
             timestamp: Date.now(),
@@ -523,6 +560,7 @@ export const useAppStore = create(
               sourceText,
               plan,
               status: "ready",
+              execution: result,
             }),
             isLoading: false,
             loadingStage: null,
@@ -601,6 +639,7 @@ export const useAppStore = create(
           viewingSessionId: null,
           isPanelOpen: null,
           error: null,
+          pendingClarification: null,
         }),
 
       clearMessages: () =>
@@ -612,6 +651,7 @@ export const useAppStore = create(
           activeModule: "chat",
           error: null,
           planApproved: false,
+          pendingClarification: null,
         }),
 
       resetToSeed: () =>
@@ -629,6 +669,7 @@ export const useAppStore = create(
           moduleRecords: {},
           error: null,
           planApproved: false,
+          pendingClarification: null,
         }),
 
       viewSession: (id) =>

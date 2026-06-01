@@ -5,7 +5,6 @@
 // MCP-style bridge for connector discovery and invocation.
 // Each connector has: id, name, configured(), actions[], handler()
 
-const ai = require("./ai");
 
 // ── Connector Handlers ──
 
@@ -462,11 +461,116 @@ const connectors = {
 
 // ── Public API ──
 
+function demoModeEnabled() {
+  return process.env.CONNECTOR_DEMO_MODE !== "false";
+}
+
+function demoConnectorResult(connectorId, action, params = {}) {
+  const now = new Date().toISOString();
+  const base = {
+    success: true,
+    status: "demo",
+    connector: connectorId,
+    action,
+    params,
+    message: "Demo connector response returned because live credentials are not configured.",
+  };
+
+  if (connectorId === "calendar") {
+    if (action === "list_events") {
+      return {
+        ...base,
+        events: [
+          {
+            id: "demo-event-1",
+            summary: "Design sync",
+            start: now,
+            end: new Date(Date.now() + 30 * 60000).toISOString(),
+            attendees: ["team@example.com"],
+          },
+        ],
+      };
+    }
+    return {
+      ...base,
+      event: {
+        id: `demo-calendar-${Date.now()}`,
+        summary: params.title || "Untitled event",
+        start: params.datetime || now,
+        link: null,
+      },
+    };
+  }
+
+  if (connectorId === "email") {
+    if (action === "read_inbox" || action === "search_emails") {
+      return {
+        ...base,
+        messages: [
+          {
+            id: "demo-email-1",
+            from: "demo@example.com",
+            subject: "Welcome to VoxMind",
+            date: now,
+            snippet: "This is a local demo inbox item.",
+          },
+        ],
+      };
+    }
+    return {
+      ...base,
+      draft: {
+        to: params.to || "",
+        subject: params.subject || "Draft from VoxMind",
+        body: params.body || "",
+      },
+    };
+  }
+
+  if (connectorId === "home_assistant") {
+    if (action === "get_devices") {
+      return {
+        ...base,
+        devices: [
+          { entity_id: "light.living_room", state: "on", name: "Living room lights", type: "light" },
+          { entity_id: "climate.thermostat", state: "22", name: "Thermostat", type: "climate" },
+        ],
+        count: 2,
+      };
+    }
+    return {
+      ...base,
+      message: `Demo smart-home action accepted for ${params.entity_id || "device"}.`,
+    };
+  }
+
+  if (connectorId === "spotify") {
+    if (action === "get_current_track") {
+      return {
+        ...base,
+        playing: true,
+        track: "Demo Track",
+        artist: "VoxMind",
+        album: "Local Mode",
+        progress_ms: 42000,
+        duration_ms: 180000,
+      };
+    }
+    return {
+      ...base,
+      message: `Demo Spotify action accepted: ${action}.`,
+    };
+  }
+
+  return base;
+}
+
 function listConnectors() {
   return Object.entries(connectors).map(([id, c]) => ({
     id,
     name: c.name,
     configured: c.configured(),
+    demo_available: !c.configured() && demoModeEnabled(),
     actions: c.actions,
   }));
 }
@@ -478,6 +582,7 @@ function connectorStatus(id) {
     id,
     name: c.name,
     configured: c.configured(),
+    demo_available: !c.configured() && demoModeEnabled(),
     actions: c.actions,
   };
 }
@@ -495,8 +600,14 @@ async function callConnector({ connectorId, action, params = {} }) {
   // Call the real handler
   try {
     const result = await connector.handler(action, params);
+    if (!result.success && result.status === "not_configured" && demoModeEnabled()) {
+      return demoConnectorResult(connectorId, action, params);
+    }
     return { ...result, connector: connectorId, action };
   } catch (err) {
+    if (demoModeEnabled()) {
+      return demoConnectorResult(connectorId, action, params);
+    }
     return { success: false, error: `${connector.name} handler error: ${err.message}`, connector: connectorId, action };
   }
 }

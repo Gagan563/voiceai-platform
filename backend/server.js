@@ -16,10 +16,20 @@ const transcribeRouter = require("./routes/transcribe");
 const ttsRouter = require("./routes/tts");
 const memoriesRouter = require("./routes/memories");
 const mcpRouter = require("./routes/mcp");
-const { recallMemory, extractFacts, saveMemory, ensureDefaultUser } = require("./services/memory");
+const modulesRouter = require("./routes/modules");
+const { recallMemory, extractFacts, saveMemory, ensureDefaultUser, getMemoryStatus } = require("./services/memory");
 const ai = require("./services/ai");
+const { listConnectors } = require("./services/mcp");
 const { runAgent } = require("./services/agent");
 const { OUTPUT_DIR, executeTool } = require("./services/tools");
+const {
+  listRoutines,
+  createRoutine,
+  updateRoutine,
+  deleteRoutine,
+  recordRoutineRun,
+  startRoutineScheduler,
+} = require("./services/routines");
 
 // ── Config ──
 const PORT = process.env.PORT || 3001;
@@ -50,6 +60,18 @@ const fileUpload = multer({
     },
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype?.startsWith("image/")) {
+      cb(new Error("Only image files are supported."), false);
+      return;
+    }
+    cb(null, true);
+  },
 });
 
 // Request logger
@@ -152,6 +174,104 @@ function fallbackPlan(intent = {}) {
   ];
 }
 
+function confidenceNumber(value, fallback = 0.72) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+}
+
+function buildClarifyingQuestion(intent = {}) {
+  const missing = Array.isArray(intent.missing_info) ? intent.missing_info.filter(Boolean) : [];
+  if (missing.length > 0) {
+    return `I can do that. What should I use for ${missing[0]}?`;
+  }
+
+  const goal = intent.goal || "that request";
+  return `I want to make sure I understood ${goal}. What is the main result you want?`;
+}
+
+function enrichIntent(intent = {}, sourceText = "") {
+  const confidence = confidenceNumber(intent.confidence);
+  const missingInfo = Array.isArray(intent.missing_info) ? intent.missing_info : [];
+  const needsClarification = confidence < 0.7;
+
+  return {
+    ...intent,
+    goal: intent.goal || sourceText.trim() || "Help with a VoxMind request",
+    missing_info: missingInfo,
+    confidence,
+    clarification: needsClarification
+      ? {
+          required: true,
+          reason: "low_confidence",
+          question: buildClarifyingQuestion({ ...intent, missing_info: missingInfo }),
+        }
+      : {
+          required: false,
+        },
+  };
+}
+
+function enrichPlanSteps(plan = [], intent = {}) {
+  const baseConfidence = confidenceNumber(intent.confidence, 0.74);
+  return plan.map((step, index) => {
+    const requiresInput = Boolean(step.requires_input);
+    const confidencePenalty = requiresInput ? 0.14 : 0.03 * Math.min(index, 4);
+    const confidence = confidenceNumber(
+      step.confidence,
+      Math.max(0.45, baseConfidence - confidencePenalty)
+    );
+
+    return {
+      ...step,
+      step: Number(step.step) || index + 1,
+      action: step.action || step.action_type || "general",
+      service: step.service || "ai",
+      requires_input: requiresInput,
+      estimated_duration_seconds: Number(step.estimated_duration_seconds) || 2 + index,
+      fallback: step.fallback || "Ask for confirmation and retry this step",
+      confidence,
+      parallel_group: step.parallel_group || null,
+    };
+  });
+}
+
+async function extractIntentForText(text, userId = "default-user") {
+  let memoriesContext = "";
+  try {
+    const memories = await recallMemory(userId, text, 5);
+    if (memories.length > 0) {
+      memoriesContext = `\n\nRelevant context from previous sessions:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+      console.log(`[Intent] Injecting ${memories.length} memories`);
+    }
+  } catch (err) {
+    console.warn("[Intent] Memory recall skipped:", err.message);
+  }
+
+  const systemPrompt = INTENT_EXTRACTION_PROMPT + memoriesContext;
+  const intent = enrichIntent(await ai.chatJSON(systemPrompt, text), text);
+
+  setImmediate(async () => {
+    try {
+      const conversationText = `User said: ${text}\nAI extracted intent: ${JSON.stringify(intent)}`;
+      const facts = await extractFacts(conversationText);
+      for (const fact of facts) {
+        await saveMemory(userId, fact);
+      }
+    } catch (err) {
+      console.warn("[Intent] Fact extraction skipped:", err.message);
+    }
+  });
+
+  return intent;
+}
+
+async function generatePlanForIntent(intent = {}) {
+  const plan = await ai.chatJSON(PLAN_GENERATION_PROMPT, JSON.stringify(intent));
+  const planArray = Array.isArray(plan) ? plan : plan.plan || plan.steps || [];
+  return enrichPlanSteps(planArray, intent);
+}
+
 // ── Health ──
 app.get("/health", (req, res) => {
   res.json({
@@ -160,8 +280,42 @@ app.get("/health", (req, res) => {
     version: "2.0.0",
     ai_engine: ai.isAvailable() ? "gemini" : "mock",
     ai_router: ai.providerStatus ? ai.providerStatus() : undefined,
+    memory: getMemoryStatus ? getMemoryStatus() : undefined,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+  });
+});
+
+app.get("/status", (req, res) => {
+  const aiRouter = ai.providerStatus ? ai.providerStatus() : {};
+  const connectors = listConnectors();
+  const requiredKeys = {
+    whisper: Boolean(process.env.OPENAI_API_KEY),
+    gemini: Boolean(process.env.GEMINI_API_KEY),
+    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
+  };
+
+  res.json({
+    success: true,
+    status: "ok",
+    services: {
+      api: "ready",
+      ai: ai.isAvailable() ? "ready" : "local_fallback",
+      transcription: requiredKeys.whisper ? "whisper" : "needs_openai_key",
+      memory: getMemoryStatus(),
+      connectors,
+      routines: {
+        enabled: true,
+        count: listRoutines().length,
+      },
+    },
+    keys: requiredKeys,
+    ai_router: aiRouter,
+    demo: {
+      connectors: process.env.CONNECTOR_DEMO_MODE !== "false",
+      transcription: process.env.ALLOW_STUB_TRANSCRIPTION === "true",
+    },
   });
 });
 
@@ -170,6 +324,7 @@ app.use("/transcribe", transcribeRouter);
 app.use("/tts", ttsRouter);
 app.use("/memories", memoriesRouter);
 app.use("/mcp", mcpRouter);
+app.use("/modules", modulesRouter);
 
 // ── Intent Extraction (Gemini) ──
 app.post("/intent", async (req, res) => {
@@ -187,44 +342,21 @@ app.post("/intent", async (req, res) => {
     const currentUserId = userId || "default-user";
     console.log(`[Intent] Processing: "${text.substring(0, 80)}"`);
 
-    // Recall memories
-    let memoriesContext = "";
-    try {
-      const memories = await recallMemory(currentUserId, text, 5);
-      if (memories.length > 0) {
-        memoriesContext = `\n\nRelevant context from previous sessions:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
-        console.log(`[Intent] Injecting ${memories.length} memories`);
-      }
-    } catch (err) {
-      console.warn("[Intent] Memory recall skipped:", err.message);
-    }
-
-    const systemPrompt = INTENT_EXTRACTION_PROMPT + memoriesContext;
-    const intent = await ai.chatJSON(systemPrompt, text);
+    const intent = await extractIntentForText(text, currentUserId);
 
     console.log(`[Intent] Extracted: action_type="${intent.action_type}", confidence=${intent.confidence}`);
-
-    // Extract facts in background
-    setImmediate(async () => {
-      try {
-        const conversationText = `User said: ${text}\nAI extracted intent: ${JSON.stringify(intent)}`;
-        const facts = await extractFacts(conversationText);
-        for (const fact of facts) {
-          await saveMemory(currentUserId, fact);
-        }
-      } catch (err) {
-        console.warn("[Intent] Fact extraction skipped:", err.message);
-      }
-    });
 
     res.json({
       success: true,
       intent,
-      metadata: { engine: "gemini", memories_used: !!memoriesContext },
+      metadata: {
+        engine: "ai_router",
+        clarification_required: Boolean(intent.clarification?.required),
+      },
     });
   } catch (error) {
     console.error("[Intent] Error:", error.message);
-    const intent = fallbackIntent(req.body?.text);
+    const intent = enrichIntent(fallbackIntent(req.body?.text), req.body?.text);
     res.json({
       success: true,
       intent,
@@ -251,9 +383,7 @@ app.post("/plan", async (req, res) => {
 
     console.log(`[Plan] Generating plan for: "${intent.goal}"`);
 
-    const plan = await ai.chatJSON(PLAN_GENERATION_PROMPT, JSON.stringify(intent));
-
-    const planArray = Array.isArray(plan) ? plan : plan.plan || plan.steps || [];
+    const planArray = await generatePlanForIntent(intent);
 
     res.json({
       success: true,
@@ -263,7 +393,7 @@ app.post("/plan", async (req, res) => {
     });
   } catch (error) {
     console.error("[Plan] Error:", error.message);
-    const planArray = fallbackPlan(req.body?.intent);
+    const planArray = enrichPlanSteps(fallbackPlan(req.body?.intent), req.body?.intent);
     res.json({
       success: true,
       plan: planArray,
@@ -305,6 +435,7 @@ async function executePlanStep(step, index) {
   if (step.requires_input) {
     return {
       step: index + 1,
+      step_id: step.id || null,
       status: "waiting_for_input",
       message: "This step needs user confirmation before it can run.",
     };
@@ -315,6 +446,7 @@ async function executePlanStep(step, index) {
     const result = await executeTool("search_web", { query: searchQuery });
     return {
       step: index + 1,
+      step_id: step.id || null,
       status: result.success ? "completed" : "failed",
       message: result.success ? "Search completed." : result.error,
       result,
@@ -325,6 +457,7 @@ async function executePlanStep(step, index) {
   if (externalMessage) {
     return {
       step: index + 1,
+      step_id: step.id || null,
       status: "connector_required",
       message: externalMessage,
     };
@@ -332,9 +465,121 @@ async function executePlanStep(step, index) {
 
   return {
     step: index + 1,
+    step_id: step.id || null,
     status: "completed",
     message: step.description || "Step completed.",
   };
+}
+
+function isBarrierStep(step) {
+  const text = stepText(step);
+  return (
+    step.requires_input ||
+    Boolean(step.depends_on || step.dependsOn) ||
+    Boolean(externalServiceMessage(step)) ||
+    /confirm|final|notify|summari[sz]e|review/.test(text)
+  );
+}
+
+function buildExecutionBatches(plan) {
+  const batches = [];
+  let current = [];
+
+  const flush = () => {
+    if (current.length) {
+      batches.push(current);
+      current = [];
+    }
+  };
+
+  plan.forEach((step, index) => {
+    const entry = { step, index };
+    if (isBarrierStep(step)) {
+      flush();
+      batches.push([entry]);
+      return;
+    }
+    current.push(entry);
+  });
+
+  flush();
+  return batches;
+}
+
+async function executePlanBatches(plan) {
+  const batches = buildExecutionBatches(plan);
+  const results = new Array(plan.length);
+  const batchSummaries = [];
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    const batchResults =
+      batch.length > 1
+        ? await Promise.all(batch.map(({ step, index }) => executePlanStep(step, index)))
+        : [await executePlanStep(batch[0].step, batch[0].index)];
+
+    batchResults.forEach((result, offset) => {
+      results[batch[offset].index] = result;
+    });
+
+    batchSummaries.push({
+      batch: batchIndex + 1,
+      mode: batch.length > 1 ? "parallel" : "sequential",
+      steps: batch.map(({ index }) => index + 1),
+    });
+  }
+
+  return { results, batches: batchSummaries };
+}
+
+function fallbackExecutionReview(results = []) {
+  const failed = results.filter((step) => step.status === "failed");
+  const blocked = results.filter((step) =>
+    ["connector_required", "waiting_for_input"].includes(step.status)
+  );
+  const completed = results.filter((step) => step.status === "completed");
+  const confidence = results.length ? completed.length / results.length : 0;
+
+  return {
+    status: failed.length ? "needs_attention" : blocked.length ? "partial" : "passed",
+    confidence: Number(confidence.toFixed(2)),
+    summary: blocked.length
+      ? `${completed.length} step(s) completed; ${blocked.length} step(s) need confirmation or connectors.`
+      : failed.length
+        ? `${failed.length} step(s) failed and should be retried or adjusted.`
+        : "All executable steps completed cleanly.",
+    issues: [
+      ...failed.map((step) => `Step ${step.step} failed: ${step.message || "unknown error"}`),
+      ...blocked.map((step) => `Step ${step.step} is blocked: ${step.message}`),
+    ],
+    corrections: failed.length ? ["Retry failed steps after checking connector/API state."] : [],
+  };
+}
+
+async function reviewExecution({ plan, results, agent }) {
+  const fallback = fallbackExecutionReview(results);
+  if (!ai.isAvailable()) return fallback;
+
+  try {
+    const review = await ai.chatJSON(
+      `You review an AI assistant execution result.
+Return ONLY JSON with: status ("passed"|"partial"|"needs_attention"), confidence (0-1), summary, issues array, corrections array.
+Be concise. Do not expose hidden reasoning.`,
+      JSON.stringify({ plan, results, agent }),
+      { task: "review", maxTokens: 1200, temperature: 0.2 }
+    );
+
+    return {
+      ...fallback,
+      ...review,
+      confidence: confidenceNumber(review.confidence, fallback.confidence),
+      issues: Array.isArray(review.issues) ? review.issues : fallback.issues,
+      corrections: Array.isArray(review.corrections) ? review.corrections : fallback.corrections,
+    };
+  } catch (error) {
+    console.warn("[Execute] Review fallback:", error.message);
+    return fallback;
+  }
 }
 
 function shouldRunAgent(plan) {
@@ -352,6 +597,23 @@ function planToAgentInput(plan) {
   });
 
   return `Execute this approved plan and produce a preview artifact when useful:\n${lines.join("\n")}`;
+}
+
+async function runRoutineWorkflow(routine, userId = "default-user") {
+  const intent = await extractIntentForText(routine.prompt, userId);
+  const plan = await generatePlanForIntent(intent);
+  const execution = await executePlanBatches(plan);
+  const review = await reviewExecution({ plan, results: execution.results, agent: null });
+
+  return {
+    status: review.status === "needs_attention" ? "partial" : "ok",
+    routine_id: routine.id,
+    intent,
+    plan,
+    batches: execution.batches,
+    results: execution.results,
+    review,
+  };
 }
 
 // ── Execute ──
@@ -379,14 +641,14 @@ app.post("/execute", async (req, res) => {
       });
     }
 
-    for (let index = 0; index < plan.length; index++) {
-      results.push(await executePlanStep(plan[index], index));
-    }
+    const execution = await executePlanBatches(plan);
+    results.push(...execution.results);
 
     const failed = results.filter((step) => step.status === "failed");
     const blocked = results.filter((step) =>
       ["connector_required", "waiting_for_input"].includes(step.status)
     );
+    const review = await reviewExecution({ plan, results, agent: agentResult });
 
     res.json({
       status: failed.length ? "partial" : "ok",
@@ -395,12 +657,106 @@ app.post("/execute", async (req, res) => {
         : "Plan executed successfully.",
       execution_id: executionId,
       steps_received: plan.length,
+      batches: execution.batches,
       results,
+      review,
       agent: agentResult,
     });
   } catch (error) {
     console.error("[Execute] Error:", error.message);
     res.status(500).json({ error: "Plan execution failed", details: error.message });
+  }
+});
+
+// Routine automation
+app.get("/routines", (req, res) => {
+  res.json({ success: true, routines: listRoutines() });
+});
+
+app.post("/routines", (req, res) => {
+  try {
+    const routine = createRoutine(req.body || {});
+    res.status(201).json({ success: true, routine });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/routines/:id", (req, res) => {
+  try {
+    const routine = updateRoutine(req.params.id, req.body || {});
+    if (!routine) return res.status(404).json({ error: "Routine not found" });
+    res.json({ success: true, routine });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/routines/:id", (req, res) => {
+  const deleted = deleteRoutine(req.params.id);
+  if (!deleted) return res.status(404).json({ error: "Routine not found" });
+  res.json({ success: true, deleted });
+});
+
+app.post("/routines/:id/run", async (req, res) => {
+  const routine = listRoutines().find((item) => item.id === req.params.id);
+  if (!routine) return res.status(404).json({ error: "Routine not found" });
+
+  try {
+    const result = await runRoutineWorkflow(routine, req.body?.userId || "default-user");
+    const updated = recordRoutineRun(routine.id, result);
+    res.json({ success: true, routine: updated, result });
+  } catch (error) {
+    const updated = recordRoutineRun(routine.id, {
+      status: "failed",
+      error: error.message,
+    });
+    res.status(500).json({ error: "Routine failed", details: error.message, routine: updated });
+  }
+});
+
+// Image and screen context
+app.post("/context/image", imageUpload.single("image"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Upload an image file in the 'image' field." });
+  }
+
+  const prompt =
+    req.body?.prompt ||
+    "Describe the useful information in this image for a voice-first assistant.";
+
+  try {
+    if (!ai.chatImage) throw new Error("Vision route is unavailable.");
+
+    const analysis = await ai.chatImage(
+      `You analyze image or screen context for a voice AI assistant.
+Return a concise plain-text summary with visible text, important UI/state, and suggested next action.
+Do not claim certainty for unclear details.`,
+      {
+        mimeType: req.file.mimetype,
+        data: req.file.buffer.toString("base64"),
+      },
+      prompt,
+      { task: "vision", maxTokens: 1200, temperature: 0.2 }
+    );
+
+    res.json({
+      success: true,
+      type: req.body?.type || "image",
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      analysis,
+    });
+  } catch (error) {
+    res.json({
+      success: true,
+      type: req.body?.type || "image",
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      analysis:
+        "Image received. Vision analysis needs a configured Gemini API key, so I can attach this context but cannot inspect the image yet.",
+      metadata: { engine: "local_fallback", reason: error.message },
+    });
   }
 });
 
@@ -580,6 +936,12 @@ server.listen(PORT, () => {
   ensureDefaultUser()
     .then(() => console.log("[Memory] Default user ready"))
     .catch((err) => console.warn("[Memory] Default user skipped:", err.message));
+
+  startRoutineScheduler(async (routine) => {
+    console.log(`[Routine] Running scheduled routine: ${routine.name}`);
+    return runRoutineWorkflow(routine, "default-user");
+  });
+  console.log("[Routine] Scheduler ready");
 });
 
 module.exports = { app, server };

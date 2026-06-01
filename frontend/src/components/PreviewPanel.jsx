@@ -282,6 +282,29 @@ export default function PreviewPanel() {
             </div>
 
             <PreviewList title="Capabilities" icon={Boxes} items={artifact.features} />
+            {artifact.previewUrl ? (
+              <div className="border-t border-line px-4 py-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <MonitorPlay className="h-4 w-4 text-leaf" />
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-text-muted">
+                    Running Preview
+                  </h3>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-line bg-white">
+                  <iframe
+                    title={artifact.title}
+                    src={artifact.previewUrl}
+                    className="h-72 w-full bg-white"
+                    sandbox="allow-scripts allow-forms allow-same-origin"
+                  />
+                </div>
+                {artifact.agentSummary ? (
+                  <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                    {artifact.agentSummary}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <PreviewList title="Workflow" icon={Route} items={artifact.workflow} />
             <PreviewList title="Screens" icon={Layers3} items={artifact.screens} />
             <PreviewList title="Autonomous Jobs" icon={Activity} items={artifact.automation} />

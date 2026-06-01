@@ -54,6 +54,9 @@ function StepCard({ step, index, selected, onToggle }) {
     className: "border-line bg-white/[0.04] text-text-soft",
   };
   const Icon = meta.icon;
+  const confidence = Number.isFinite(Number(step.confidence))
+    ? Math.round(Number(step.confidence) * 100)
+    : null;
 
   return (
     <motion.div
@@ -112,6 +115,11 @@ function StepCard({ step, index, selected, onToggle }) {
               <Clock3 className="h-3 w-3" />
               {step.estimated_duration_seconds || 0}s
             </span>
+            {confidence !== null ? (
+              <span className="font-code text-[11px] text-text-muted">
+                {confidence}% sure
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -140,6 +148,12 @@ function StepCard({ step, index, selected, onToggle }) {
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-semibold text-amber">
                   <Bell className="h-3 w-3" />
                   Needs input
+                </div>
+              ) : null}
+
+              {step.parallel_group ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-aqua/25 bg-aqua/10 px-2 py-1 text-[11px] font-semibold text-aqua">
+                  Parallel: {step.parallel_group}
                 </div>
               ) : null}
 

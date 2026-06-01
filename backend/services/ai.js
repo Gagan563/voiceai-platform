@@ -124,6 +124,39 @@ async function callGemini(systemPrompt, userMessage, options = {}) {
   return result.response.text();
 }
 
+async function callGeminiImage(systemPrompt, image, prompt, options = {}) {
+  const model = getGeminiModel();
+  const generationConfig = {
+    maxOutputTokens: options.maxTokens || 2048,
+    temperature: options.temperature ?? 0.3,
+  };
+
+  if (options.json) {
+    generationConfig.responseMimeType = "application/json";
+  }
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: image.mimeType,
+              data: image.data,
+            },
+          },
+        ],
+      },
+    ],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig,
+  });
+
+  return result.response.text();
+}
+
 async function callGeminiMultiTurn(systemPrompt, messages, options = {}) {
   const model = getGeminiModel();
   const history = messages.slice(0, -1).map((msg) => ({
@@ -282,6 +315,21 @@ async function chatJSON(systemPrompt, userMessage, options = {}) {
   }
 }
 
+async function chatImage(systemPrompt, image, prompt, options = {}) {
+  if (!isProviderConfigured("gemini") || isCircuitOpen("gemini")) {
+    throw new Error("Gemini vision is not available.");
+  }
+
+  try {
+    const text = await callGeminiImage(systemPrompt, image, prompt, options);
+    recordSuccess("gemini");
+    return text;
+  } catch (error) {
+    recordFailure("gemini", error);
+    throw error;
+  }
+}
+
 function isAvailable() {
   return ["gemini", "anthropic"].some(
     (provider) => isProviderConfigured(provider) && !isCircuitOpen(provider)
@@ -292,6 +340,7 @@ module.exports = {
   chat,
   chatMultiTurn,
   chatJSON,
+  chatImage,
   isAvailable,
   getModel: getGeminiModel,
   providerStatus,

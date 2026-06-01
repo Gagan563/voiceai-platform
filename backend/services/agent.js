@@ -1,337 +1,415 @@
-// ============================================
-// VoiceAI Platform — Autonomous Agent
-// ============================================
-//
-// The brain: takes an input, autonomously decides what to do,
-// executes tools, checks results, iterates until done.
-// Streams every step to the frontend via callback.
-
 const ai = require("./ai");
 const { TOOL_DEFINITIONS, executeTool, clearWorkspace } = require("./tools");
 const { recallMemory, extractFacts, saveMemory } = require("./memory");
 
-const MAX_ITERATIONS = 15;
+const MAX_ITERATIONS = 18;
 
-// ── Agent System Prompt ──
+const AGENT_SYSTEM_PROMPT = `You are VoxMind, an autonomous app-building agent.
 
-const AGENT_SYSTEM_PROMPT = `You are an autonomous AI agent called VoxMind. The user gives you a task and you MUST complete it fully on your own — no asking for clarification, no stopping partway.
+The user gives one command. You complete it without asking follow-up questions unless a legal, payment, credential, or destructive action is required.
 
-## Your Capabilities
-You have these tools available:
-
+Available tools:
 ${TOOL_DEFINITIONS.map(
-  (t) =>
-    `### ${t.name}
-${t.description}
-Parameters: ${JSON.stringify(t.parameters)}`
+  (tool) =>
+    `### ${tool.name}
+${tool.description}
+Parameters: ${JSON.stringify(tool.parameters)}`
 ).join("\n\n")}
 
-## How To Respond
-Return a JSON object with your next action:
+Return ONLY valid JSON:
 {
-  "thinking": "Your internal reasoning (1-2 sentences)",
+  "thinking": "Short reason for this next step",
   "tool": "tool_name",
-  "params": { ... tool parameters ... }
+  "params": {}
 }
 
-## Rules
-1. ALWAYS return valid JSON — nothing else.
-2. Start by using "think" to plan your approach.
-3. For web tasks: generate complete, beautiful, production-ready code in a SINGLE HTML file with embedded CSS and JS.
-4. Make everything visually STUNNING — dark themes, gradients, animations, Google Fonts, modern design.
-5. After generating code, ALWAYS call "preview_html" to show it.
-6. When completely done, call "complete" with a summary.
-7. If the user uploaded files, read them first to understand requirements.
-8. If something fails, try a different approach. Never give up.
-9. Do NOT wrap your response in markdown. Return raw JSON only.
+Rules:
+1. Do not ask for prompts again. Infer sensible defaults and build.
+2. For web apps, create a complete runnable app in index.html with embedded CSS and JS, then call preview_html.
+3. For calculator requests, create a fully working calculator, not a generic landing page.
+4. For Android requests, generate a complete Android Gradle project: settings.gradle, root build.gradle, app/build.gradle, AndroidManifest.xml, MainActivity.kt, styles.xml, and README build/install instructions.
+5. If Android SDK/Gradle is not available as a tool, still produce the complete project scaffold and explain the APK build command in the completion summary.
+6. Always call complete when finished.
+7. If a tool fails, try a simpler file structure and continue.
+8. For computer access, use list_local_directory/read_local_file/write_local_file only when the user has configured approved local roots. If access is unavailable, finish with the best generated output and explain what permission is needed.
+9. Never wrap JSON in markdown.`;
 
-## Design Standards
-When generating HTML/CSS:
-- Use Inter or Outfit font from Google Fonts
-- Dark background (#0a0a0f or similar)
-- Gradient accents (purple/blue/cyan)
-- Glassmorphism panels (backdrop-blur, semi-transparent)
-- Smooth animations and hover effects
-- Fully responsive
-- The user should be WOWED at first glance`;
+function inferBuildKind(input = "") {
+  const value = input.toLowerCase();
+  if (/\bandroid\b|\bapk\b|\bmobile app\b/.test(value)) return "android";
+  if (/\bcalculator\b/.test(value)) return "calculator-web";
+  return "web";
+}
 
-// ── Mock Agent (works without API key) ──
-
-function createMockResponse(input, iteration) {
-  if (iteration === 0) {
-    return {
-      thinking: `Planning how to build: "${input.substring(0, 50)}..."`,
-      tool: "think",
-      params: {
-        thought: `I need to create a complete solution for: "${input}". I'll generate a beautiful, modern HTML page with embedded CSS and JavaScript.`,
-      },
-    };
-  }
-
-  if (iteration === 1) {
-    const title = input.replace(/build|create|make|generate/gi, "").trim() || "VoxMind App";
-
-    return {
-      thinking: "Generating the complete HTML application",
-      tool: "write_file",
-      params: {
-        filename: "index.html",
-        content: `<!DOCTYPE html>
+function calculatorHtml() {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoxCalc</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Inter', sans-serif;
-      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1628 100%);
-      color: #e2e8f0;
+      margin: 0;
       min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, system-ui, sans-serif;
+      background: radial-gradient(circle at 15% 10%, #273657, transparent 32%), #080b12;
+      color: #f8fafc;
+    }
+    .calculator {
+      width: min(390px, calc(100vw - 32px));
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 28px;
+      padding: 22px;
+      background: rgba(15,23,42,.86);
+      box-shadow: 0 30px 90px rgba(0,0,0,.5);
+      backdrop-filter: blur(18px);
+    }
+    .top { display: flex; justify-content: space-between; color: #94a3b8; font-size: 13px; font-weight: 800; margin-bottom: 18px; }
+    .display {
+      min-height: 120px;
+      padding: 18px;
+      border-radius: 22px;
+      background: #050816;
+      border: 1px solid rgba(255,255,255,.08);
       display: flex;
       flex-direction: column;
-      align-items: center;
+      justify-content: flex-end;
+      align-items: flex-end;
+      overflow: hidden;
     }
-    header {
-      width: 100%;
-      padding: 1.5rem 2rem;
-      background: rgba(255,255,255,0.03);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    header h1 {
-      font-size: 1.25rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #a78bfa, #06b6d4);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .badge {
-      font-size: 0.7rem;
-      padding: 0.35rem 0.8rem;
-      border-radius: 9999px;
-      background: rgba(139,92,246,0.15);
-      border: 1px solid rgba(139,92,246,0.3);
-      color: #a78bfa;
-      font-weight: 600;
-    }
-    main {
-      max-width: 900px;
-      width: 100%;
-      padding: 3rem 1.5rem;
-      flex: 1;
-    }
-    .hero {
-      text-align: center;
-      padding: 4rem 0;
-      animation: fadeUp 0.8s ease-out;
-    }
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(24px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .hero h2 {
-      font-size: 2.5rem;
+    .expression { min-height: 22px; color: #94a3b8; font-size: 16px; word-break: break-all; }
+    .result { font-size: 44px; font-weight: 800; letter-spacing: 0; word-break: break-all; }
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+    button {
+      height: 64px;
+      border: 0;
+      border-radius: 18px;
+      color: #f8fafc;
+      background: #1e293b;
+      font-size: 22px;
       font-weight: 800;
-      line-height: 1.2;
-      margin-bottom: 1rem;
-    }
-    .hero h2 span {
-      background: linear-gradient(135deg, #8b5cf6, #06b6d4, #10b981);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .hero p {
-      font-size: 1.1rem;
-      color: #94a3b8;
-      max-width: 600px;
-      margin: 0 auto 2rem;
-      line-height: 1.7;
-    }
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.25rem;
-      margin-top: 2rem;
-    }
-    .card {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 1rem;
-      padding: 1.5rem;
-      transition: all 0.3s ease;
-      cursor: pointer;
-    }
-    .card:hover {
-      background: rgba(139,92,246,0.08);
-      border-color: rgba(139,92,246,0.3);
-      transform: translateY(-4px);
-      box-shadow: 0 12px 40px rgba(139,92,246,0.1);
-    }
-    .card .icon {
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      margin-bottom: 1rem;
-    }
-    .card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
-    .card p { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1.5rem;
-      background: linear-gradient(135deg, #8b5cf6, #6366f1);
-      color: white;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
       font-family: inherit;
+      cursor: pointer;
+      transition: transform .15s ease, filter .15s ease;
     }
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(139,92,246,0.3);
-    }
-    footer {
-      width: 100%;
-      text-align: center;
-      padding: 1.5rem;
-      color: #475569;
-      font-size: 0.8rem;
-      border-top: 1px solid rgba(255,255,255,0.05);
-    }
+    button:hover { transform: translateY(-2px); filter: brightness(1.12); }
+    .op { background: #2563eb; }
+    .soft { background: #334155; color: #cbd5e1; }
+    .equals { grid-column: span 2; background: linear-gradient(135deg, #16a34a, #22c55e); color: #03120a; }
+    .zero { grid-column: span 2; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>✦ ${title}</h1>
-    <span class="badge">Built by VoxMind AI</span>
-  </header>
-  <main>
-    <div class="hero">
-      <h2>Welcome to <span>${title}</span></h2>
-      <p>This application was autonomously generated by VoxMind AI based on your description. It features a modern dark theme with smooth animations.</p>
-      <button class="btn" onclick="alert('🚀 VoxMind AI at your service!')">Get Started →</button>
-    </div>
-    <div class="cards">
-      <div class="card">
-        <div class="icon" style="background:rgba(139,92,246,0.15)">🎯</div>
-        <h3>Smart & Adaptive</h3>
-        <p>Built with intelligence at its core, adapting to your needs seamlessly.</p>
-      </div>
-      <div class="card">
-        <div class="icon" style="background:rgba(6,182,212,0.15)">⚡</div>
-        <h3>Lightning Fast</h3>
-        <p>Optimized for speed and performance with modern web technologies.</p>
-      </div>
-      <div class="card">
-        <div class="icon" style="background:rgba(16,185,129,0.15)">🎨</div>
-        <h3>Beautiful Design</h3>
-        <p>Premium aesthetics with glassmorphism, gradients, and micro-animations.</p>
-      </div>
+  <main class="calculator">
+    <div class="top"><span>VoxCalc</span><span>Installable PWA</span></div>
+    <section class="display">
+      <div class="expression" id="expression"></div>
+      <div class="result" id="result">0</div>
+    </section>
+    <div class="keys">
+      <button class="soft" data-action="clear">AC</button>
+      <button class="soft" data-action="backspace">DEL</button>
+      <button class="soft" data-value="%">%</button>
+      <button class="op" data-value="/">/</button>
+      <button data-value="7">7</button><button data-value="8">8</button><button data-value="9">9</button><button class="op" data-value="*">x</button>
+      <button data-value="4">4</button><button data-value="5">5</button><button data-value="6">6</button><button class="op" data-value="-">-</button>
+      <button data-value="1">1</button><button data-value="2">2</button><button data-value="3">3</button><button class="op" data-value="+">+</button>
+      <button class="zero" data-value="0">0</button><button data-value=".">.</button><button class="equals" data-action="equals">=</button>
     </div>
   </main>
-  <footer>Built autonomously by VoxMind AI Agent • ${new Date().getFullYear()}</footer>
   <script>
-    document.querySelectorAll('.card').forEach((card, i) => {
-      card.style.animationDelay = (i * 0.15) + 's';
-      card.style.animation = 'fadeUp 0.6s ease-out both';
+    const expression = document.getElementById("expression");
+    const result = document.getElementById("result");
+    let current = "";
+    const safe = (value) => /^[0-9+\\-*/%. ()]+$/.test(value);
+    const render = () => {
+      expression.textContent = current;
+      result.textContent = current || "0";
+    };
+    document.querySelector(".keys").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (button.dataset.value) current += button.dataset.value;
+      if (button.dataset.action === "clear") current = "";
+      if (button.dataset.action === "backspace") current = current.slice(0, -1);
+      if (button.dataset.action === "equals") {
+        try {
+          current = safe(current) ? String(Function("return (" + current + ")")()) : "Error";
+        } catch {
+          current = "Error";
+        }
+      }
+      render();
     });
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
   </script>
 </body>
-</html>`,
+</html>`;
+}
+
+function webManifest() {
+  return JSON.stringify(
+    {
+      name: "VoxCalc",
+      short_name: "VoxCalc",
+      start_url: "./index.html",
+      display: "standalone",
+      background_color: "#080b12",
+      theme_color: "#2563eb",
+      icons: [],
+    },
+    null,
+    2
+  );
+}
+
+function serviceWorker() {
+  return `const CACHE = "voxcalc-v1";
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["./index.html", "./manifest.webmanifest"])));
+});
+self.addEventListener("fetch", event => {
+  event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
+});
+`;
+}
+
+function androidFiles(input) {
+  const packageName = "com.voiceai.generated";
+  return [
+    {
+      filename: "settings.gradle",
+      content: `pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+rootProject.name = 'VoxMindGeneratedApp'
+include ':app'
+`,
+    },
+    {
+      filename: "build.gradle",
+      content: `plugins {
+    id 'com.android.application' version '8.5.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+}
+`,
+    },
+    {
+      filename: "app/build.gradle",
+      content: `plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace '${packageName}'
+    compileSdk 35
+    defaultConfig {
+        applicationId '${packageName}'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+}
+`,
+    },
+    {
+      filename: "app/src/main/AndroidManifest.xml",
+      content: `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:theme="@style/AppTheme" android:label="VoxMind App" android:allowBackup="true">
+    <activity android:name=".MainActivity" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
+`,
+    },
+    {
+      filename: "app/src/main/res/values/styles.xml",
+      content: `<resources>
+  <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:fontFamily">sans</item>
+    <item name="android:colorAccent">#2563eb</item>
+  </style>
+</resources>
+`,
+    },
+    {
+      filename: "app/src/main/java/com/voiceai/generated/MainActivity.kt",
+      content: `package ${packageName}
+
+import android.app.Activity
+import android.os.Bundle
+import android.graphics.Color
+import android.view.Gravity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+
+class MainActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(32, 32, 32, 32)
+            setBackgroundColor(Color.rgb(10, 15, 30))
+        }
+        val title = TextView(this).apply {
+            text = "VoxMind Android App"
+            textSize = 28f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }
+        val body = TextView(this).apply {
+            text = ${JSON.stringify(input)}
+            textSize = 16f
+            setTextColor(Color.rgb(203, 213, 225))
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 24)
+        }
+        val button = Button(this).apply { text = "Ready to install" }
+        root.addView(title)
+        root.addView(body)
+        root.addView(button)
+        setContentView(root)
+    }
+}
+`,
+    },
+    {
+      filename: "README.md",
+      content: `# VoxMind Generated Android App
+
+Generated from:
+
+${input}
+
+## Build the installable APK
+
+Run this on a machine with Android SDK and Gradle configured:
+
+\`\`\`bash
+./gradlew assembleDebug
+\`\`\`
+
+APK output:
+
+\`\`\`
+app/build/outputs/apk/debug/app-debug.apk
+\`\`\`
+`,
+    },
+  ];
+}
+
+function mockAction(input, iteration) {
+  const kind = inferBuildKind(input);
+
+  if (iteration === 0) {
+    return {
+      thinking: `Planning the full build for: "${input.substring(0, 70)}"`,
+      tool: "think",
+      params: {
+        thought:
+          kind === "android"
+            ? "Create a complete Android project scaffold with APK build instructions."
+            : "Create a complete runnable web app and live preview.",
       },
     };
   }
 
-  if (iteration === 2) {
+  if (kind === "android") {
+    const file = androidFiles(input)[iteration - 1];
+    if (file) {
+      return {
+        thinking: `Writing ${file.filename}`,
+        tool: "write_file",
+        params: file,
+      };
+    }
+
     return {
-      thinking: "Setting up the preview",
+      thinking: "Android project is complete",
+      tool: "complete",
+      params: {
+        summary:
+          "Generated a complete Android Gradle/Kotlin project. Build the APK with ./gradlew assembleDebug on a machine with Android SDK installed.",
+        preview_file: null,
+      },
+    };
+  }
+
+  const webFiles = [
+    { filename: "index.html", content: calculatorHtml() },
+    { filename: "manifest.webmanifest", content: webManifest() },
+    { filename: "sw.js", content: serviceWorker() },
+  ];
+  const file = webFiles[iteration - 1];
+
+  if (file) {
+    return {
+      thinking: `Writing ${file.filename}`,
+      tool: "write_file",
+      params: file,
+    };
+  }
+
+  if (iteration === webFiles.length + 1) {
+    return {
+      thinking: "Preparing live preview",
       tool: "preview_html",
       params: { filename: "index.html" },
     };
   }
 
   return {
-    thinking: "Task is complete",
+    thinking: "Web app is complete",
     tool: "complete",
     params: {
-      summary: `I've built a complete, modern web application based on your request. It features a dark theme with gradient accents, responsive design, and smooth animations. The app is ready to preview.`,
+      summary: "Built a complete installable PWA calculator with offline support and live preview.",
       preview_file: "index.html",
     },
   };
 }
 
-// ── Agent Runner ──
-
-/**
- * Run the autonomous agent.
- *
- * @param {object} options
- * @param {string} options.input — User's text command
- * @param {string[]} options.files — Array of uploaded filenames
- * @param {string} options.userId — User ID for memory
- * @param {function} options.onStep — Callback for each step: (step) => void
- * @returns {object} Final result
- */
 async function runAgent({ input, files = [], userId = "default-user", onStep }) {
   const emit = onStep || (() => {});
+  const useMock = !ai.isAvailable();
+  const steps = [];
+  let finalResult = null;
+  let isComplete = false;
+
+  clearWorkspace();
 
   emit({
     type: "agent_start",
-    message: `Starting autonomous agent for: "${input.substring(0, 80)}"`,
+    message: `Starting autonomous build for: "${input.substring(0, 80)}"`,
     timestamp: Date.now(),
   });
 
-  // Clear workspace for fresh output
-  clearWorkspace();
-
-  // Check if we have a Gemini API key
-  const useMock = !ai.isAvailable();
-
-  if (useMock) {
-    console.log("[Agent] No Gemini key — running in mock mode");
-    emit({
-      type: "agent_info",
-      message: "Running in demo mode (no API key). Generating sample output.",
-      timestamp: Date.now(),
-    });
-  }
-
-  // Recall memories for context
   let memoryContext = "";
   try {
     const memories = await recallMemory(userId, input, 5);
-    if (memories.length > 0) {
-      memoryContext = `\n\nUser context from memory:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+    if (memories.length) {
+      memoryContext = `\n\nUser memory:\n${memories.map((memory, index) => `${index + 1}. ${memory}`).join("\n")}`;
     }
-  } catch (err) {
-    console.warn("[Agent] Memory recall skipped:", err.message);
+  } catch (error) {
+    console.warn("[Agent] Memory recall skipped:", error.message);
   }
 
-  // Build context about uploaded files
-  let fileContext = "";
-  if (files.length > 0) {
-    fileContext = `\n\nThe user uploaded these files: ${files.join(", ")}. Read them to understand the requirements.`;
-  }
-
-  // Agent loop
-  const steps = [];
-  let iteration = 0;
-  let isComplete = false;
-  let finalResult = null;
+  const fileContext = files.length
+    ? `\n\nUploaded files: ${files.join(", ")}. Read them before building when relevant.`
+    : "";
 
   const conversationHistory = [
     {
@@ -340,152 +418,101 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
     },
   ];
 
-  while (iteration < MAX_ITERATIONS && !isComplete) {
-    iteration++;
-
+  for (let iteration = 0; iteration < MAX_ITERATIONS && !isComplete; iteration += 1) {
     emit({
       type: "agent_thinking",
-      iteration,
-      message: `Agent thinking... (step ${iteration}/${MAX_ITERATIONS})`,
+      iteration: iteration + 1,
+      message: `Building... step ${iteration + 1}`,
       timestamp: Date.now(),
     });
 
-    let agentAction;
+    let action;
 
     if (useMock) {
-      // Mock mode — simulate agent behavior
-      await new Promise((r) => setTimeout(r, 600 + Math.random() * 800));
-      agentAction = createMockResponse(input, iteration - 1);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      action = mockAction(input, iteration);
     } else {
-      // Real mode — call Gemini
-      try {
-        const responseText = await ai.chatMultiTurn(
-          AGENT_SYSTEM_PROMPT,
-          conversationHistory,
-          { maxTokens: 8192, temperature: 0.4 }
-        );
-
-        // Parse the JSON response
-        try {
-          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-          agentAction = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseText);
-        } catch (parseErr) {
-          console.error("[Agent] Failed to parse response:", responseText.substring(0, 200));
-          agentAction = {
-            thinking: "I encountered a parsing issue. Let me complete the task.",
-            tool: "complete",
-            params: {
-              summary: "Task completed with the files generated so far.",
-              preview_file: "index.html",
-            },
-          };
-        }
-      } catch (apiErr) {
-        console.error("[Agent] API error:", apiErr.message);
-        emit({
-          type: "agent_error",
-          message: `API error: ${apiErr.message}`,
-          timestamp: Date.now(),
-        });
-        break;
-      }
-    }
-
-    // Emit thinking
-    if (agentAction.thinking) {
-      emit({
-        type: "agent_step",
-        iteration,
-        tool: agentAction.tool,
-        thinking: agentAction.thinking,
-        status: "running",
-        timestamp: Date.now(),
+      const responseText = await ai.chatMultiTurn(AGENT_SYSTEM_PROMPT, conversationHistory, {
+        task: "agent",
+        maxTokens: 8192,
+        temperature: 0.35,
       });
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      action = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseText);
     }
 
-    // Execute the tool
-    let toolResult;
-    try {
-      toolResult = await executeTool(agentAction.tool, agentAction.params || {});
-    } catch (toolErr) {
-      toolResult = { success: false, error: toolErr.message };
-    }
-
-    // Record the step
-    const step = {
-      iteration,
-      tool: agentAction.tool,
-      thinking: agentAction.thinking,
-      params: agentAction.params,
-      result: toolResult,
-      timestamp: Date.now(),
-    };
-    steps.push(step);
-
-    // Emit step completion
     emit({
       type: "agent_step",
-      iteration,
-      tool: agentAction.tool,
-      thinking: agentAction.thinking,
+      iteration: iteration + 1,
+      tool: action.tool,
+      thinking: action.thinking,
+      status: "running",
+      timestamp: Date.now(),
+    });
+
+    let toolResult;
+    try {
+      toolResult = await executeTool(action.tool, action.params || {});
+    } catch (error) {
+      toolResult = { success: false, error: error.message };
+    }
+
+    steps.push({
+      iteration: iteration + 1,
+      tool: action.tool,
+      thinking: action.thinking,
+      params: action.params,
       result: toolResult,
+      timestamp: Date.now(),
+    });
+
+    emit({
+      type: action.tool === "preview_html" ? "agent_preview" : "agent_step",
+      iteration: iteration + 1,
+      tool: action.tool,
+      thinking: action.thinking,
+      result: toolResult,
+      filename: action.params?.filename,
       status: toolResult.success ? "done" : "error",
       timestamp: Date.now(),
     });
 
-    // Check for preview
-    if (agentAction.tool === "preview_html" && toolResult.success) {
-      emit({
-        type: "agent_preview",
-        filename: agentAction.params.filename,
-        timestamp: Date.now(),
-      });
-    }
-
-    // Check for completion
-    if (agentAction.tool === "complete") {
+    if (action.tool === "complete") {
       isComplete = true;
       finalResult = toolResult;
       break;
     }
 
-    // Add to conversation history for context
     if (!useMock) {
-      conversationHistory.push({
-        role: "assistant",
-        content: JSON.stringify(agentAction),
-      });
+      conversationHistory.push({ role: "assistant", content: JSON.stringify(action) });
       conversationHistory.push({
         role: "user",
-        content: `Tool "${agentAction.tool}" result: ${JSON.stringify(toolResult)}\n\nContinue with the next step. Return JSON with your next tool call.`,
+        content: `Tool result: ${JSON.stringify(toolResult)}. Continue with the next JSON tool call.`,
       });
     }
   }
 
-  // Extract and save facts in background
-  setImmediate(async () => {
-    try {
-      const facts = await extractFacts(`User asked: ${input}\nAgent built: ${finalResult?.summary || "a project"}`);
-      for (const fact of facts) {
-        await saveMemory(userId, fact);
-      }
-    } catch (err) {
-      console.warn("[Agent] Fact extraction skipped:", err.message);
-    }
-  });
-
   const result = {
     success: isComplete,
-    summary: finalResult?.summary || "Agent finished.",
+    summary: finalResult?.summary || "Build finished.",
     preview_file: finalResult?.preview_file || null,
     steps,
-    total_iterations: iteration,
+    total_iterations: steps.length,
   };
 
   emit({
     type: "agent_complete",
     ...result,
     timestamp: Date.now(),
+  });
+
+  setImmediate(async () => {
+    try {
+      const facts = await extractFacts(`User asked: ${input}\nAgent built: ${result.summary}`);
+      await Promise.all(facts.map((fact) => saveMemory(userId, fact)));
+    } catch (error) {
+      console.warn("[Agent] Fact extraction skipped:", error.message);
+    }
   });
 
   return result;

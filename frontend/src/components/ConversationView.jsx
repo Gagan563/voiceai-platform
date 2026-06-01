@@ -161,6 +161,45 @@ function TypingIndicator({ stage }) {
   );
 }
 
+function ExecutionReview({ review, batches = [] }) {
+  if (!review) return null;
+  const confidence = Number.isFinite(Number(review.confidence))
+    ? Math.round(Number(review.confidence) * 100)
+    : null;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-ink-950/35 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <CheckCircle2 className="h-3.5 w-3.5 text-leaf" />
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-muted">
+          Self review
+        </span>
+        {confidence !== null ? (
+          <span className="font-code text-[11px] text-text-muted">{confidence}%</span>
+        ) : null}
+      </div>
+      <p className="text-xs leading-relaxed text-text-soft">{review.summary}</p>
+      {review.issues?.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {review.issues.slice(0, 3).map((issue) => (
+            <span
+              key={issue}
+              className="rounded-lg border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-medium text-amber"
+            >
+              {issue}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {batches.length ? (
+        <div className="mt-2 text-[11px] font-medium text-text-muted">
+          {batches.filter((batch) => batch.mode === "parallel").length} parallel batch(es)
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MessageIcon({ role, type }) {
   if (role === "user") {
     return (
@@ -338,6 +377,13 @@ export default function ConversationView({ prompts = [], onPrompt }) {
 
                     {msg.type === "intent" && msg.intent ? (
                       <IntentDisplay intent={msg.intent} />
+                    ) : null}
+
+                    {msg.type === "execution_confirmation" && msg.execution?.review ? (
+                      <ExecutionReview
+                        review={msg.execution.review}
+                        batches={msg.execution.batches || []}
+                      />
                     ) : null}
 
                     <span

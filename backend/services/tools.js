@@ -13,6 +13,13 @@ const { callConnector } = require("./mcp");
 
 // Sandboxed output directory for agent-generated files
 const OUTPUT_DIR = path.join(__dirname, "..", "agent-output");
+const LOCAL_ACCESS_ENABLED = process.env.LOCAL_COMPUTER_ACCESS === "true";
+const LOCAL_WRITE_ENABLED = process.env.LOCAL_COMPUTER_WRITE === "true";
+const LOCAL_ACCESS_ROOTS = (process.env.LOCAL_ACCESS_ROOTS || "")
+  .split(path.delimiter)
+  .map((root) => root.trim())
+  .filter(Boolean)
+  .map((root) => path.resolve(root));
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -29,6 +36,27 @@ function resolveOutputPath(filename) {
   const workspace = path.resolve(OUTPUT_DIR);
   if (resolved !== workspace && !resolved.startsWith(workspace + path.sep)) {
     throw new Error("File path escapes the output workspace.");
+  }
+
+  return resolved;
+}
+
+function resolveLocalPath(targetPath) {
+  if (!LOCAL_ACCESS_ENABLED) {
+    throw new Error("Local computer access is disabled. Set LOCAL_COMPUTER_ACCESS=true and LOCAL_ACCESS_ROOTS.");
+  }
+
+  if (!LOCAL_ACCESS_ROOTS.length) {
+    throw new Error("No local access roots configured. Set LOCAL_ACCESS_ROOTS to one or more approved folders.");
+  }
+
+  const resolved = path.resolve(String(targetPath || ""));
+  const allowed = LOCAL_ACCESS_ROOTS.some(
+    (root) => resolved === root || resolved.startsWith(root + path.sep)
+  );
+
+  if (!allowed) {
+    throw new Error("Path is outside the approved local access roots.");
   }
 
   return resolved;
@@ -93,6 +121,31 @@ const TOOL_DEFINITIONS = [
       "Search the web for information. Returns summarized search results.",
     parameters: {
       query: "The search query",
+    },
+  },
+  {
+    name: "list_local_directory",
+    description:
+      "List files in a user-approved local computer folder. Only works inside LOCAL_ACCESS_ROOTS.",
+    parameters: {
+      path: "Absolute path to an approved local directory",
+    },
+  },
+  {
+    name: "read_local_file",
+    description:
+      "Read a file from a user-approved local computer folder. Only works inside LOCAL_ACCESS_ROOTS.",
+    parameters: {
+      path: "Absolute path to an approved local file",
+    },
+  },
+  {
+    name: "write_local_file",
+    description:
+      "Write a file inside a user-approved local computer folder. Requires LOCAL_COMPUTER_WRITE=true and LOCAL_ACCESS_ROOTS.",
+    parameters: {
+      path: "Absolute output path inside an approved local folder",
+      content: "Full file content to write",
     },
   },
   {
@@ -374,6 +427,67 @@ async function search_web({ query }) {
   }
 }
 
+function list_local_directory({ path: targetPath }) {
+  const directory = resolveLocalPath(targetPath);
+  const stat = fs.statSync(directory);
+  if (!stat.isDirectory()) {
+    return { success: false, error: "Path is not a directory." };
+  }
+
+  const entries = fs.readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    const fullPath = path.join(directory, entry.name);
+    const entryStat = fs.statSync(fullPath);
+    return {
+      name: entry.name,
+      path: fullPath,
+      type: entry.isDirectory() ? "directory" : "file",
+      size: entryStat.size,
+      modifiedAt: entryStat.mtime.toISOString(),
+    };
+  });
+
+  return { success: true, path: directory, entries };
+}
+
+function read_local_file({ path: targetPath }) {
+  const filePath = resolveLocalPath(targetPath);
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) {
+    return { success: false, error: "Path is not a file." };
+  }
+
+  if (stat.size > 2 * 1024 * 1024) {
+    return { success: false, error: "File is larger than the 2 MB read limit." };
+  }
+
+  return {
+    success: true,
+    path: filePath,
+    content: fs.readFileSync(filePath, "utf-8"),
+    size: stat.size,
+  };
+}
+
+function write_local_file({ path: targetPath, content }) {
+  if (!LOCAL_WRITE_ENABLED) {
+    return {
+      success: false,
+      error: "Local file writes are disabled. Set LOCAL_COMPUTER_WRITE=true to allow writes inside approved roots.",
+    };
+  }
+
+  const filePath = resolveLocalPath(targetPath);
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, String(content ?? ""), "utf-8");
+
+  return {
+    success: true,
+    path: filePath,
+    size: String(content ?? "").length,
+  };
+}
+
 /**
  * Think / plan step — no-op, just records the reasoning.
  */
@@ -416,6 +530,12 @@ async function executeTool(toolName, params) {
       return preview_html(params);
     case "search_web":
       return search_web(params);
+    case "list_local_directory":
+      return list_local_directory(params);
+    case "read_local_file":
+      return read_local_file(params);
+    case "write_local_file":
+      return write_local_file(params);
     case "mcp_call":
       return callConnector(params);
     case "think":

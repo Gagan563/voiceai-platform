@@ -1,0 +1,27 @@
+{
+  "name": "voxmind-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npx react-native start",
+    "android": "npx react-native run-android",
+    "ios": "npx react-native run-ios"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "@react-navigation/native": "7.2.5",
+    "@react-navigation/bottom-tabs": "7.2.0",
+    "react-native-screens": "4.4.0",
+    "react-native-safe-area-context": "5.0.0",
+    "react-native-audio-recorder-player": "3.6.12",
+    "react-native-tts": "4.1.1",
+    "react-native-vector-icons": "10.2.0",
+    "axios": "1.16.1"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "15.0.1",
+    "@react-native/metro-config": "0.76.9",
+    "@react-native/typescript-config": "0.76.9"
+  }
+}
