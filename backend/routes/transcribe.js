@@ -30,7 +30,7 @@ const upload = multer({
  *
  * Accepts a multipart/form-data audio file upload.
  * Sends it to OpenAI Whisper API for transcription.
- * Falls back to a stub response if OPENAI_API_KEY is not set.
+ * Requires OPENAI_API_KEY unless ALLOW_STUB_TRANSCRIPTION=true is set for demos.
  */
 router.post("/", upload.single("audio"), async (req, res) => {
   try {
@@ -100,21 +100,32 @@ router.post("/", upload.single("audio"), async (req, res) => {
       });
     }
 
-    // ── Fallback: stub response ──
-    console.log("[Transcribe] No OPENAI_API_KEY set — returning stub response");
+    if (process.env.ALLOW_STUB_TRANSCRIPTION === "true") {
+      console.log("[Transcribe] Demo transcription enabled");
 
-    return res.json({
-      success: true,
-      transcript: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget",
-      engine: "stub",
-      confidence: 0.94,
-      language: "en",
-      duration_seconds: 4.2,
+      return res.json({
+        success: true,
+        transcript: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget",
+        engine: "demo",
+        confidence: 0.94,
+        language: "en",
+        duration_seconds: 4.2,
+        metadata: {
+          filename: originalname,
+          size_bytes: size,
+          mimetype,
+          note: "Demo transcription. Set OPENAI_API_KEY for real Whisper transcription.",
+        },
+      });
+    }
+
+    return res.status(503).json({
+      error: "Transcription is not configured",
+      hint: "Set OPENAI_API_KEY in backend/.env to enable Whisper transcription, or use browser speech mode in the app.",
       metadata: {
         filename: originalname,
         size_bytes: size,
-        mimetype: mimetype,
-        note: "STUB — Set OPENAI_API_KEY in .env for real Whisper transcription.",
+        mimetype,
       },
     });
   } catch (error) {

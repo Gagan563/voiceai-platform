@@ -3,12 +3,11 @@ import axios from "axios";
 /**
  * VoxMind API client.
  *
- * A real Axios instance is configured so the app is backend-ready. While the
- * backend is not connected, calls are served by local mocks with realistic
- * delays. Set VITE_USE_MOCK_API=false once the backend is live.
+ * A real Axios instance is configured so the app talks to the local backend by
+ * default. Set VITE_USE_MOCK_API=true when you want the standalone demo mode.
  */
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "/api";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_API !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "true";
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -20,8 +19,11 @@ apiClient.interceptors.request.use((config) => {
   try {
     const raw = localStorage.getItem("voxmind-store");
     if (raw) {
-      const key = JSON.parse(raw)?.state?.settings?.apiKeys?.anthropic;
+      const settings = JSON.parse(raw)?.state?.settings;
+      const key = settings?.apiKeys?.anthropic;
+      const model = settings?.selectedModel;
       if (key) config.headers["x-api-key"] = key;
+      if (model) config.headers["x-model"] = model;
     }
   } catch {
     // Persisted settings are optional.
@@ -61,8 +63,24 @@ const delay = (min = 900, max = 1700) =>
 const newId = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
+const getSelectedModel = () => {
+  try {
+    const raw = localStorage.getItem("voxmind-store");
+    return (
+      JSON.parse(raw)?.state?.settings?.selectedModel ||
+      "claude-sonnet-4-20250514"
+    );
+  } catch {
+    return "claude-sonnet-4-20250514";
+  }
+};
+
 const detectActionType = (text) => {
   const value = text.toLowerCase();
+
+  if (/(build|create|generate|make|develop|platform|app|website|dashboard|requirements|prd|spec)/.test(value)) {
+    return "create";
+  }
 
   if (/(schedule|meeting|calendar|appointment|book|invite|sync)/.test(value)) {
     return "schedule";
@@ -153,6 +171,50 @@ const planTemplates = {
       action: "send_message",
     },
   ],
+  create: (goal) => [
+    {
+      description: `Read the requirement and define the product goal for "${goal}"`,
+      action_type: "create",
+      service: "ai",
+      action: "analyze_requirements",
+    },
+    {
+      description: "Choose the core workflow, data objects, and automation boundaries",
+      action_type: "create",
+      service: "ai",
+      action: "design_system_plan",
+    },
+    {
+      description: "Map the coding-agent workspace: codebase brain, terminal runner, tests, review, browser preview, memory, connectors, and checkpoints",
+      action_type: "create",
+      service: "ai",
+      action: "map_dev_agent_suite",
+    },
+    {
+      description: "Generate a clickable product preview with intake, planner, executor, developer tools, and result views",
+      action_type: "create",
+      service: "filesystem",
+      action: "generate_preview",
+    },
+    {
+      description: "Run validation checks for missing requirements, risky actions, and user approval points",
+      action_type: "automate",
+      service: "ai",
+      action: "validate_workflow",
+    },
+    {
+      description: "Create permission gates for terminal commands, filesystem edits, browser control, GitHub actions, and deployments",
+      action_type: "automate",
+      service: "ai",
+      action: "design_permission_gates",
+    },
+    {
+      description: "Prepare the next build task list for backend executors, integrations, and deployment",
+      action_type: "create",
+      service: "ai",
+      action: "prepare_build_backlog",
+    },
+  ],
   general: (goal) => [
     {
       description: `Understand exactly what you mean by "${goal}"`,
@@ -191,6 +253,8 @@ export async function healthCheck() {
 }
 
 export async function extractIntent(text) {
+  const model = getSelectedModel();
+
   if (USE_MOCK) {
     await delay(500, 900);
     const action_type = detectActionType(text);
@@ -205,22 +269,25 @@ export async function extractIntent(text) {
         missing_info: [],
         confidence: 0.86 + Math.random() * 0.12,
       },
+      metadata: { model },
     };
   }
 
-  return apiClient.post("/intent", { text });
+  return apiClient.post("/intent", { text, model });
 }
 
 export async function generatePlan(intent) {
+  const model = getSelectedModel();
+
   if (USE_MOCK) {
     await delay(700, 1300);
     const build = planTemplates[intent.action_type] || planTemplates.general;
     const plan = build(intent.goal).map(toPlanStep);
 
-    return { plan, steps: plan };
+    return { plan, steps: plan, metadata: { model } };
   }
 
-  return apiClient.post("/plan", { intent });
+  return apiClient.post("/plan", { intent, model });
 }
 
 export async function executePlan(plan) {

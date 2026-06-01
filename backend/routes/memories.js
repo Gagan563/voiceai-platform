@@ -55,18 +55,19 @@ router.delete("/:userId/all", async (req, res) => {
 router.delete("/:userId/:memoryId", async (req, res) => {
   try {
     const { userId, memoryId } = req.params;
-    await deleteMemory(memoryId);
+    const result = await deleteMemory(userId, memoryId);
+
+    if (result.count === 0) {
+      return res.status(404).json({ error: "Memory not found" });
+    }
 
     res.json({
       success: true,
+      userId,
       message: `Memory ${memoryId} deleted`,
     });
   } catch (error) {
     console.error("[Memories API] Delete error:", error.message);
-
-    if (error.code === "P2025") {
-      return res.status(404).json({ error: "Memory not found" });
-    }
 
     res.status(500).json({ error: "Failed to delete memory", details: error.message });
   }

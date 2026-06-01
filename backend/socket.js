@@ -1,22 +1,19 @@
 // ============================================
 // VoiceAI Platform — Socket.IO Setup
 // ============================================
+// Uses the hybrid AI router (Gemini → Anthropic → local)
 
 const { Server } = require("socket.io");
-const Anthropic = require("@anthropic-ai/sdk");
 const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("./prompts");
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const ai = require("./services/ai");
 
 /**
  * Initialize Socket.IO on the HTTP server.
- * Provides real-time streaming for Claude responses.
+ * Provides real-time messaging for AI responses.
  *
  * Events:
- *   - "stream:intent"   — client sends { text }, server streams intent extraction
- *   - "stream:plan"     — client sends { intent }, server streams plan generation
+ *   - "stream:intent"   — client sends { text }, server returns intent
+ *   - "stream:plan"     — client sends { intent }, server returns plan
  *   - "connection"      — logs new client connections
  *   - "disconnect"      — logs client disconnections
  */
@@ -32,7 +29,7 @@ function initializeSocket(httpServer) {
   io.on("connection", (socket) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
 
-    // ── Stream Intent Extraction ──
+    // ── Intent Extraction ──
     socket.on("stream:intent", async (data) => {
       const { text } = data;
 
@@ -46,35 +43,15 @@ function initializeSocket(httpServer) {
       console.log(`[Socket.IO] stream:intent from ${socket.id}: "${text.substring(0, 50)}..."`);
 
       try {
-        const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1024,
-          system: INTENT_EXTRACTION_PROMPT,
-          messages: [{ role: "user", content: text }],
-        });
-
-        // Emit each text chunk as it arrives
-        stream.on("text", (chunk) => {
-          socket.emit("stream:intent:chunk", { chunk });
-        });
-
-        // Emit the final assembled message
-        const finalMessage = await stream.finalMessage();
-        const responseText = finalMessage.content[0]?.text || "";
-
-        try {
-          const parsed = JSON.parse(responseText);
-          socket.emit("stream:intent:complete", { intent: parsed });
-        } catch {
-          socket.emit("stream:intent:complete", { intent: responseText, warning: "Response was not valid JSON" });
-        }
+        const intent = await ai.chatJSON(INTENT_EXTRACTION_PROMPT, text);
+        socket.emit("stream:intent:complete", { intent });
       } catch (error) {
         console.error(`[Socket.IO] stream:intent error:`, error.message);
         socket.emit("stream:error", { error: error.message });
       }
     });
 
-    // ── Stream Plan Generation ──
+    // ── Plan Generation ──
     socket.on("stream:plan", async (data) => {
       const { intent } = data;
 
@@ -89,29 +66,9 @@ function initializeSocket(httpServer) {
 
       try {
         const intentString = typeof intent === "string" ? intent : JSON.stringify(intent);
-
-        const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2048,
-          system: PLAN_GENERATION_PROMPT,
-          messages: [{ role: "user", content: intentString }],
-        });
-
-        // Emit each text chunk as it arrives
-        stream.on("text", (chunk) => {
-          socket.emit("stream:plan:chunk", { chunk });
-        });
-
-        // Emit the final assembled message
-        const finalMessage = await stream.finalMessage();
-        const responseText = finalMessage.content[0]?.text || "";
-
-        try {
-          const parsed = JSON.parse(responseText);
-          socket.emit("stream:plan:complete", { plan: parsed });
-        } catch {
-          socket.emit("stream:plan:complete", { plan: responseText, warning: "Response was not valid JSON" });
-        }
+        const plan = await ai.chatJSON(PLAN_GENERATION_PROMPT, intentString);
+        const planArray = Array.isArray(plan) ? plan : plan.plan || plan.steps || [];
+        socket.emit("stream:plan:complete", { plan: planArray });
       } catch (error) {
         console.error(`[Socket.IO] stream:plan error:`, error.message);
         socket.emit("stream:error", { error: error.message });

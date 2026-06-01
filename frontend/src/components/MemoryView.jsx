@@ -61,7 +61,7 @@ export default function MemoryView({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
-      fetchMemories();
+      queueMicrotask(fetchMemories);
     }
   }, [isOpen, fetchMemories]);
 
@@ -155,7 +155,7 @@ export default function MemoryView({ isOpen, onClose }) {
                     className="flex h-8 items-center gap-1.5 rounded-lg border border-danger/25 bg-danger/10 px-3 text-[11px] font-semibold text-danger transition hover:bg-danger/20 disabled:opacity-50"
                   >
                     <Trash2 className="h-3 w-3" />
-                    Clear all
+                    Clear all memories
                   </motion.button>
                 )}
 

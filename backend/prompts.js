@@ -14,6 +14,20 @@ RULES:
 3. If information is missing, list what's missing in the "missing_info" array.
 4. Confidence should be a float between 0.0 and 1.0.
 
+MODULES (use exactly one):
+- "chat" — general conversation, Q&A, explanations
+- "task" — tasks, reminders, schedules, checklists
+- "write" — emails, reports, essays, posts, code/content drafting
+- "search" — web search, research, source comparison, news
+- "health" — symptoms, medication, wellness, sleep, mood, exercise
+- "finance" — income, expenses, budgets, bills, currency, spending
+- "learn" — lessons, quizzes, flashcards, tutoring
+- "home" — smart home devices, scenes, rooms
+- "travel" — itineraries, packing, weather, currency, flights/hotels links
+- "media" — music, news, movies, books, podcasts, YouTube/Spotify
+- "translate" — translation, phrasebook, pronunciation, conversation mode
+- "business" — meetings, CRM, invoices, reports, CSV analysis
+
 ACTION TYPES (use exactly one):
 - "schedule" — booking, appointments, calendar events, meetings, reminders with specific times
 - "create" — generating content, documents, files, projects, new items
@@ -26,29 +40,39 @@ ACTION TYPES (use exactly one):
 RESPONSE FORMAT (strict JSON):
 {
   "goal": "<concise description of what the user wants to achieve>",
+  "module": "<one of the modules above>",
   "action_type": "<one of the action types above>",
   "entities": {
-    "<entity_name>": "<entity_value>"
+    "time": null,
+    "person": null,
+    "location": null,
+    "topic": null,
+    "amount": null,
+    "language": null
   },
+  "steps": [
+    "<2-4 clear human-readable step descriptions>"
+  ],
   "constraints": [
     "<any time, location, format, or other constraints mentioned>"
   ],
   "missing_info": [
     "<any critical information not provided but needed to fulfill the request>"
   ],
-  "confidence": <float 0.0 to 1.0>
+  "confidence": <float 0.0 to 1.0>,
+  "spoken_response": "<warm, natural 1-2 sentence response to say aloud>"
 }
 
 EXAMPLES:
 
 Input: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget"
-Output: {"goal":"Schedule a meeting with Sarah about Q4 budget","action_type":"schedule","entities":{"person":"Sarah","topic":"Q4 budget","day":"next Tuesday","time":"3:00 PM"},"constraints":["next Tuesday","3:00 PM"],"missing_info":["meeting duration","meeting location or link"],"confidence":0.95}
+Output: {"goal":"Schedule a meeting with Sarah about Q4 budget","module":"task","action_type":"schedule","entities":{"time":"3:00 PM","person":"Sarah","location":null,"topic":"Q4 budget","amount":null,"language":null},"steps":["Check calendar availability","Create the meeting event","Send Sarah the invite"],"constraints":["next Tuesday","3:00 PM"],"missing_info":["meeting duration","meeting location or link"],"confidence":0.95,"spoken_response":"Sure, I can help schedule that. I’ll check the details and prepare the meeting plan for you."}
 
 Input: "Remind me to call the dentist"
-Output: {"goal":"Set a reminder to call the dentist","action_type":"remind","entities":{"task":"call the dentist"},"constraints":[],"missing_info":["when to be reminded","dentist phone number"],"confidence":0.85}
+Output: {"goal":"Set a reminder to call the dentist","module":"task","action_type":"remind","entities":{"time":null,"person":"dentist","location":null,"topic":"call dentist","amount":null,"language":null},"steps":["Clarify reminder time","Create the reminder","Confirm notification timing"],"constraints":[],"missing_info":["when to be reminded","dentist phone number"],"confidence":0.85,"spoken_response":"I can set that up. I just need the reminder time before I save it."}
 
 Input: "What's the weather like?"
-Output: {"goal":"Get current weather information","action_type":"answer","entities":{"topic":"weather"},"constraints":["current"],"missing_info":["location"],"confidence":0.80}
+Output: {"goal":"Get current weather information","module":"travel","action_type":"answer","entities":{"time":"current","person":null,"location":null,"topic":"weather","amount":null,"language":null},"steps":["Ask for the location","Fetch current weather","Summarize conditions"],"constraints":["current"],"missing_info":["location"],"confidence":0.80,"spoken_response":"I can check that. Which location should I use?"}
 
 Now extract the intent from the user's input. Return ONLY the JSON object.`;
 

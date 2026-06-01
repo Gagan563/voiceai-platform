@@ -1,141 +1,100 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Mic, Square } from "lucide-react";
+import useWhisper from "@/hooks/useWhisper";
 import { useAppStore } from "@/store/appStore";
 
 export const VoiceButton = () => {
-  const isRecording = useAppStore((state) => state.isRecording);
   const isLoading = useAppStore((state) => state.isLoading);
   const setRecording = useAppStore((state) => state.setRecording);
   const submitInput = useAppStore((state) => state.submitInput);
+  const {
+    isRecording,
+    isTranscribing,
+    transcript,
+    amplitude,
+    startRecording,
+    stopRecording,
+    error,
+    isSupported,
+  } = useWhisper();
+  const lastSubmittedTranscript = useRef("");
 
-  const recognitionRef = useRef(null);
-  const silenceTimer = useRef(null);
-  const finalRef = useRef("");
-  const interimRef = useRef("");
-  const [interim, setInterim] = useState("");
-  const [error, setError] = useState("");
+  useEffect(() => {
+    setRecording(isRecording);
+  }, [isRecording, setRecording]);
 
-  const SpeechRecognition =
-    typeof window !== "undefined" &&
-    (window.SpeechRecognition || window.webkitSpeechRecognition);
+  useEffect(() => {
+    const cleanTranscript = transcript.trim();
+    if (
+      cleanTranscript &&
+      cleanTranscript !== lastSubmittedTranscript.current &&
+      !isTranscribing
+    ) {
+      lastSubmittedTranscript.current = cleanTranscript;
+      submitInput(cleanTranscript);
+    }
+  }, [isTranscribing, submitInput, transcript]);
 
-  const clearSilence = () => {
-    if (silenceTimer.current) clearTimeout(silenceTimer.current);
-  };
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
 
-  const finalize = () => {
-    clearSilence();
-    setRecording(false);
+      if (event.code !== "Space" || isTyping || isLoading) return;
 
-    const text = `${finalRef.current} ${interimRef.current}`.trim();
-    finalRef.current = "";
-    interimRef.current = "";
-    setInterim("");
-    recognitionRef.current = null;
-
-    if (text) submitInput(text);
-  };
-
-  const resetSilence = () => {
-    clearSilence();
-    silenceTimer.current = setTimeout(() => {
-      try {
-        recognitionRef.current?.stop();
-      } catch {
-        // Recognition may already be stopped by the browser.
+      event.preventDefault();
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
       }
-    }, 2000);
-  };
+    };
 
-  const start = () => {
-    if (!SpeechRecognition) {
-      setError("Voice input is not supported in this browser. Please type instead.");
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isLoading, isRecording, startRecording, stopRecording]);
+
+  const state = isLoading || isTranscribing ? "processing" : isRecording ? "recording" : "idle";
+  const ringScale = useMemo(() => {
+    const normalized = Math.min(Math.max(amplitude / 70, 0), 1);
+    return 1.15 + normalized * 0.55;
+  }, [amplitude]);
+
+  const handleClick = () => {
+    if (isLoading || isTranscribing) return;
+
+    if (isRecording) {
+      stopRecording();
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    finalRef.current = "";
-    interimRef.current = "";
-    setInterim("");
-    setError("");
-
-    recognition.onresult = (event) => {
-      let interimText = "";
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const text = event.results[index][0].transcript;
-
-        if (event.results[index].isFinal) {
-          finalRef.current += `${text} `;
-        } else {
-          interimText += text;
-        }
-      }
-
-      interimRef.current = interimText;
-      setInterim(interimText);
-      resetSilence();
-    };
-
-    recognition.onerror = (event) => {
-      clearSilence();
-      setRecording(false);
-
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setError("Microphone access is needed. Please allow it in your browser settings.");
-      }
-    };
-
-    recognition.onend = () => finalize();
-
-    recognitionRef.current = recognition;
-    setRecording(true);
-
-    try {
-      recognition.start();
-      resetSilence();
-    } catch {
-      setRecording(false);
-      setError("Could not start voice input. Please try again.");
-    }
+    startRecording();
   };
 
-  const handleClick = () => {
-    if (isLoading) return;
-
-    if (isRecording) {
-      try {
-        recognitionRef.current?.stop();
-      } catch {
-        // Recognition may already be stopped by the browser.
-      }
-    } else {
-      start();
-    }
-  };
-
-  useEffect(() => () => clearSilence(), []);
-
-  const state = isLoading ? "processing" : isRecording ? "recording" : "idle";
+  const statusText = isTranscribing
+    ? "Transcribing..."
+    : isRecording
+    ? "Listening..."
+    : "Hold to speak or press Space";
 
   return (
     <div className="relative flex items-center justify-center">
       <AnimatePresence>
-        {isRecording ? (
+        {isRecording || isTranscribing ? (
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            className="absolute bottom-[72px] left-1/2 w-max max-w-[60vw] -translate-x-1/2 rounded-2xl border border-vox-border bg-vox-s2 px-4 py-2 text-sm text-vox-text shadow-lg"
+            className="absolute bottom-[72px] left-1/2 w-max max-w-[68vw] -translate-x-1/2 rounded-2xl border border-vox-border bg-vox-s2 px-4 py-2 text-sm text-vox-text shadow-lg"
             data-testid="voice-live-transcript"
           >
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-vox-cancel animate-pulse" />
-              {interim || "Listening..."}
+              {statusText}
             </span>
           </motion.div>
         ) : null}
@@ -147,7 +106,7 @@ export const VoiceButton = () => {
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            className="absolute bottom-[72px] left-1/2 w-64 -translate-x-1/2 rounded-2xl border border-vox-cancel/30 bg-vox-cancel/10 px-4 py-2 text-center text-xs text-vox-cancel shadow-lg"
+            className="absolute bottom-[72px] left-1/2 w-72 -translate-x-1/2 rounded-2xl border border-vox-cancel/30 bg-vox-cancel/10 px-4 py-2 text-center text-xs text-vox-cancel shadow-lg"
           >
             {error}
           </motion.div>
@@ -155,12 +114,17 @@ export const VoiceButton = () => {
       </AnimatePresence>
 
       {state === "recording" ? (
-        <span className="absolute inset-0 rounded-full animate-glow-pulse" />
+        <motion.span
+          className="absolute inset-0 rounded-full bg-vox-primary/20"
+          animate={{ opacity: [0.35, 0.12, 0.35], scale: ringScale }}
+          transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
+        />
       ) : null}
 
       <motion.button
         type="button"
         onClick={handleClick}
+        disabled={isLoading || isTranscribing || !isSupported}
         whileTap={{ scale: 0.92 }}
         animate={{ scale: state === "recording" ? 1.08 : 1 }}
         className={[
@@ -168,9 +132,11 @@ export const VoiceButton = () => {
           state === "recording"
             ? "bg-vox-primary text-white shadow-[0_0_40px_var(--vox-primary-glow)]"
             : "border border-vox-border bg-vox-s2 text-vox-muted hover:border-vox-primary/50 hover:text-vox-primary",
+          !isSupported ? "cursor-not-allowed opacity-50" : "",
         ].join(" ")}
         data-testid="voice-record-button"
         aria-label={isRecording ? "Stop recording" : "Start recording"}
+        title={isSupported ? statusText : "MediaRecorder is not supported in this browser"}
       >
         {state === "processing" ? (
           <Loader2 size={22} className="animate-spin text-vox-primary" />

@@ -11,6 +11,8 @@ dist/
 build/
 .next/
 out/
+backend/agent-output/
+backend/uploads/
 
 # Environment files
 .env

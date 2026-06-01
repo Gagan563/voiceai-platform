@@ -4,6 +4,7 @@ import {
   Bell,
   Brain,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -46,7 +47,7 @@ const serviceMeta = {
   web: { icon: Globe2, className: "border-brand/25 bg-brand/10 text-brand" },
 };
 
-function StepCard({ step, index }) {
+function StepCard({ step, index, selected, onToggle }) {
   const [expanded, setExpanded] = useState(index === 0);
   const meta = serviceMeta[step.service] || {
     icon: FileText,
@@ -66,6 +67,30 @@ function StepCard({ step, index }) {
         onClick={() => setExpanded((value) => !value)}
         className="flex w-full items-center gap-3 px-3 py-3 text-left"
       >
+        <span
+          role="checkbox"
+          aria-checked={selected}
+          tabIndex={0}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle(step.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              event.stopPropagation();
+              onToggle(step.id);
+            }
+          }}
+          className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border text-xs transition ${
+            selected
+              ? "border-leaf/30 bg-leaf text-ink-950"
+              : "border-line bg-white/[0.04] text-text-muted"
+          }`}
+        >
+          {selected ? <Check className="h-3.5 w-3.5" /> : null}
+        </span>
+
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-line bg-ink-950/45 font-code text-xs font-semibold text-text-soft">
           {step.step || index + 1}
         </div>
@@ -138,8 +163,36 @@ export default function PlanCards() {
   const loadingStage = useAppStore((s) => s.loadingStage);
   const approvePlan = useAppStore((s) => s.approvePlan);
   const cancelPlan = useAppStore((s) => s.cancelPlan);
+  const planKey = (currentPlan || []).map((step) => step.id).join("|");
+  const [selection, setSelection] = useState(() => ({
+    planKey: "",
+    ids: new Set(),
+  }));
+
+  const selectedIds =
+    selection.planKey === planKey
+      ? selection.ids
+      : new Set((currentPlan || []).map((step) => step.id));
 
   if (!currentPlan?.length) return null;
+
+  const toggleStep = (id) => {
+    setSelection((current) => {
+      const base =
+        current.planKey === planKey
+          ? current.ids
+          : new Set((currentPlan || []).map((step) => step.id));
+      const next = new Set(base);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { planKey, ids: next };
+    });
+  };
+
+  const selectedCount = selectedIds.size;
+  const selectedDuration = currentPlan
+    .filter((step) => selectedIds.has(step.id))
+    .reduce((sum, step) => sum + (step.estimated_duration_seconds || 0), 0);
 
   const totalDuration = currentPlan.reduce(
     (sum, step) => sum + (step.estimated_duration_seconds || 0),
@@ -168,7 +221,7 @@ export default function PlanCards() {
                     Execution plan
                   </h2>
                   <p className="mt-0.5 text-xs font-medium text-text-muted">
-                    {currentPlan.length} steps, about {totalDuration}s
+                    {selectedCount}/{currentPlan.length} selected, about {selectedDuration || totalDuration}s
                   </p>
                 </div>
               </div>
@@ -188,7 +241,13 @@ export default function PlanCards() {
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           {currentPlan.map((step, index) => (
-            <StepCard key={`${step.step || index}-${step.action}`} step={step} index={index} />
+            <StepCard
+              key={step.id || `${step.step || index}-${step.action}`}
+              step={step}
+              index={index}
+              selected={selectedIds.has(step.id)}
+              onToggle={toggleStep}
+            />
           ))}
         </div>
 
@@ -206,8 +265,8 @@ export default function PlanCards() {
 
             <motion.button
               type="button"
-              onClick={approvePlan}
-              disabled={isLoading}
+              onClick={() => approvePlan([...selectedIds])}
+              disabled={isLoading || selectedCount === 0}
               whileHover={!isLoading ? { scale: 1.02 } : undefined}
               whileTap={!isLoading ? { scale: 0.98 } : undefined}
               className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-leaf px-3 text-xs font-bold text-ink-950 shadow-lg shadow-leaf/15 transition hover:bg-text disabled:opacity-60"
@@ -220,7 +279,7 @@ export default function PlanCards() {
               ) : (
                 <>
                   <CheckCircle2 className="h-4 w-4" />
-                  Approve
+                  Approve selected
                 </>
               )}
             </motion.button>

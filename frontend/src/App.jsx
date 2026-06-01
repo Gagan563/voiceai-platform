@@ -5,11 +5,12 @@ import {
   Bot,
   Brain,
   CheckCircle2,
-  CircleAlert,
+  Cpu,
   DatabaseZap,
   History,
   MessageSquareText,
   Network,
+  Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -23,15 +24,21 @@ import ConversationView from "@/components/ConversationView";
 import InputBar from "@/components/InputBar";
 import PlanCards from "@/components/PlanCards";
 import MemoryView from "@/components/MemoryView";
+import VoiceActivation from "@/components/VoiceActivation";
 import VoxLogo from "@/components/VoxLogo";
+import HistoryPanel from "@/components/HistoryPanel";
+import Onboarding from "@/components/Onboarding";
+import SettingsPanel from "@/components/SettingsPanel";
+import ToastStack from "@/components/ToastStack";
+import ModuleWorkspace from "@/modules/ModuleWorkspace";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import "./App.css";
 
 const promptChips = [
   "Schedule a meeting with Sarah tomorrow at 3pm",
-  "Create a launch checklist for the voice assistant",
-  "Remind me to review the demo notes Friday morning",
+  "Track my food budget and bills this week",
+  "Translate this into Spanish and say it aloud",
 ];
 
 const sidebarItems = [
@@ -39,6 +46,21 @@ const sidebarItems = [
   { label: "Plan builder", icon: Network, color: "text-aqua" },
   { label: "Execution queue", icon: DatabaseZap, color: "text-amber" },
   { label: "Policy checks", icon: ShieldCheck, color: "text-leaf" },
+];
+
+const modelOptions = [
+  {
+    value: "claude-sonnet-4-20250514",
+    label: "Sonnet 4",
+  },
+  {
+    value: "claude-opus-4-20250514",
+    label: "Opus 4",
+  },
+  {
+    value: "claude-3-5-sonnet-20241022",
+    label: "Sonnet 3.5",
+  },
 ];
 
 function StatusPill({ online }) {
@@ -147,12 +169,16 @@ function Sidebar({ backendOnline, onPrompt }) {
 export default function App() {
   const [backendOnline, setBackendOnline] = useState(null);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const messages = useAppStore((s) => s.messages);
   const currentPlan = useAppStore((s) => s.currentPlan);
   const isLoading = useAppStore((s) => s.isLoading);
   const processUserInput = useAppStore((s) => s.processUserInput);
   const clearMessages = useAppStore((s) => s.clearMessages);
   const settings = useAppStore((s) => s.settings);
+  const error = useAppStore((s) => s.error);
+  const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const toggleTtsEnabled = useAppStore((s) => s.toggleTtsEnabled);
   const toggleTtsMode = useAppStore((s) => s.toggleTtsMode);
 
@@ -170,6 +196,11 @@ export default function App() {
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.remove("fs-small", "fs-medium", "fs-large");
+    document.documentElement.classList.add(`fs-${settings.fontSize || "medium"}`);
+  }, [settings.fontSize]);
 
   const handlePrompt = (prompt) => {
     if (!isLoading) {
@@ -201,6 +232,43 @@ export default function App() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
+                <VoiceActivation />
+
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setHistoryPanelOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-aqua/25 hover:bg-aqua/10 hover:text-aqua"
+                  title="Open History"
+                  aria-label="Open History"
+                >
+                  <History className="h-4 w-4" />
+                </motion.button>
+
+                <label
+                  className="hidden h-9 items-center gap-2 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition focus-within:border-aqua/35 focus-within:text-text md:flex"
+                  title="Select AI model"
+                >
+                  <Cpu className="h-3.5 w-3.5 text-aqua" />
+                  <select
+                    value={settings.selectedModel}
+                    onChange={(event) => setSelectedModel(event.target.value)}
+                    className="max-w-28 bg-transparent text-xs font-semibold text-text outline-none"
+                    aria-label="Select AI model"
+                  >
+                    {modelOptions.map((model) => (
+                      <option
+                        key={model.value}
+                        value={model.value}
+                        className="bg-ink-950 text-text"
+                      >
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 {/* TTS Toggle */}
                 <motion.button
                   type="button"
@@ -268,6 +336,18 @@ export default function App() {
                   <Brain className="h-3.5 w-3.5" />
                   Memory
                 </motion.button>
+
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setSettingsPanelOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-aqua/25 hover:bg-aqua/10 hover:text-aqua"
+                  title="Open Settings"
+                  aria-label="Open Settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </motion.button>
               </div>
             </div>
           </header>
@@ -279,7 +359,11 @@ export default function App() {
             </section>
 
             <AnimatePresence mode="wait">
-              {currentPlan?.length ? <PlanCards key="plan-panel" /> : null}
+              {currentPlan?.length ? (
+                <PlanCards key="plan-panel" />
+              ) : (
+                <ModuleWorkspace key="module-workspace" />
+              )}
             </AnimatePresence>
           </div>
         </main>
@@ -290,20 +374,16 @@ export default function App() {
         isOpen={memoryPanelOpen}
         onClose={() => setMemoryPanelOpen(false)}
       />
-
-      <AnimatePresence>
-        {backendOnline === false && (
-          <motion.div
-            initial={{ opacity: 0, y: -16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-danger/25 bg-danger/15 px-4 py-2 text-xs font-semibold text-danger shadow-2xl shadow-black/30 backdrop-blur-xl"
-          >
-            <CircleAlert className="h-4 w-4" />
-            Backend server is offline on port 3001.
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <HistoryPanel
+        isOpen={historyPanelOpen}
+        onClose={() => setHistoryPanelOpen(false)}
+      />
+      <SettingsPanel
+        isOpen={settingsPanelOpen}
+        onClose={() => setSettingsPanelOpen(false)}
+      />
+      <Onboarding />
+      <ToastStack backendOnline={backendOnline} error={error} />
 
       <AnimatePresence>
         {backendOnline === true && messages.length === 0 && (

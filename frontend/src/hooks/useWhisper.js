@@ -18,6 +18,7 @@ export default function useWhisper() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [amplitude, setAmplitude] = useState(0);
   const [error, setError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
@@ -56,6 +57,7 @@ export default function useWhisper() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    setAmplitude(0);
   }
 
   /**
@@ -72,6 +74,7 @@ export default function useWhisper() {
 
       // Calculate average volume
       const avg = dataArray.reduce((sum, val) => sum + val, 0) / dataArray.length;
+      setAmplitude(avg);
       const isSilent = avg < 10; // Threshold for silence
 
       if (isSilent) {
@@ -226,6 +229,7 @@ export default function useWhisper() {
     isRecording,
     isTranscribing,
     transcript,
+    amplitude,
     startRecording,
     stopRecording,
     error,

@@ -1,0 +1,38 @@
+{
+  "name": "voiceai-desktop",
+  "version": "1.0.0",
+  "description": "VoiceAI Platform desktop app",
+  "productName": "VoiceAI Platform",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "postinstall": "prisma generate --schema ../backend/prisma/schema.prisma",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^8.2.0",
+    "express": "^4.21.2",
+    "formdata-node": "^6.0.3",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.21.0",
+    "prisma": "^7.8.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.9.0",
+    "@electron-forge/maker-deb": "^7.9.0",
+    "@electron-forge/maker-dmg": "^7.9.0",
+    "@electron-forge/maker-squirrel": "^7.9.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.9.0",
+    "electron": "^42.3.0"
+  }
+}
