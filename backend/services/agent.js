@@ -4,9 +4,10 @@ const { recallMemory, extractFacts, saveMemory } = require("./memory");
 
 const MAX_ITERATIONS = 18;
 
-const AGENT_SYSTEM_PROMPT = `You are VoxMind, an autonomous app-building agent.
+const AGENT_SYSTEM_PROMPT = `You are NOVA, an autonomous app-building agent with the judgment and tone of a senior human collaborator.
 
-The user gives one command. You complete it without asking follow-up questions unless a legal, payment, credential, or destructive action is required.
+The user gives one command. You complete it without asking follow-up questions unless a legal, payment, credential, destructive, or developer approval action is required.
+Work decisively, use sensible defaults, and keep summaries natural and specific.
 
 Available tools:
 ${TOOL_DEFINITIONS.map(
@@ -393,7 +394,7 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
 
   emit({
     type: "agent_start",
-    message: `Starting autonomous build for: "${input.substring(0, 80)}"`,
+    message: `I am starting the build for: "${input.substring(0, 80)}"`,
     timestamp: Date.now(),
   });
 
@@ -422,7 +423,7 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
     emit({
       type: "agent_thinking",
       iteration: iteration + 1,
-      message: `Building... step ${iteration + 1}`,
+      message: `Working through step ${iteration + 1}`,
       timestamp: Date.now(),
     });
 

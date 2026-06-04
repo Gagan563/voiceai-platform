@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Layers3,
-  Sparkles,
   Target,
   User,
   XCircle,
@@ -51,11 +50,11 @@ function IntentDisplay({ intent }) {
   const confidence = Number(intent.confidence || 0);
 
   return (
-    <div className="mt-3 rounded-2xl border border-line bg-ink-950/35 p-3">
+    <div className="nova-card mt-3 rounded-lg p-3">
       <div className="mb-3 flex items-center gap-2">
         <Target className="h-3.5 w-3.5 text-aqua" />
-        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-muted">
-          Intent
+        <span className="font-mono text-[11px] font-bold uppercase text-brand">
+          Detected intent
         </span>
       </div>
 
@@ -68,7 +67,7 @@ function IntentDisplay({ intent }) {
         <div className="grid grid-cols-[82px_minmax(0,1fr)] items-center gap-2">
           <span className="font-semibold text-text-muted">Action</span>
           <span
-            className={`w-fit rounded-full border px-2 py-1 font-semibold ${
+            className={`w-fit rounded border px-2 py-1 font-mono text-[11px] font-semibold ${
               actionStyles[intent.action_type] || actionStyles.answer
             }`}
           >
@@ -81,7 +80,7 @@ function IntentDisplay({ intent }) {
           <div className="flex items-center gap-2">
             <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/[0.08]">
               <div
-                className="h-full rounded-full bg-aqua"
+                className="h-full rounded-full bg-brand"
                 style={{ width: `${Math.min(confidence * 100, 100)}%` }}
               />
             </div>
@@ -98,7 +97,7 @@ function IntentDisplay({ intent }) {
               {entityEntries.map(([key, value]) => (
                 <span
                   key={key}
-                  className="max-w-full rounded-lg border border-line bg-white/[0.04] px-2 py-1 text-[11px] text-text-soft"
+                  className="max-w-full rounded border border-line bg-panel px-2 py-1 font-mono text-[11px] text-text-soft"
                 >
                   <span className="font-semibold text-text">{key}</span>:{" "}
                   {formatValue(value)}
@@ -168,7 +167,7 @@ function ExecutionReview({ review, batches = [] }) {
     : null;
 
   return (
-    <div className="mt-3 rounded-2xl border border-line bg-ink-950/35 p-3">
+    <div className="nova-card mt-3 rounded-lg p-3">
       <div className="mb-2 flex items-center gap-2">
         <CheckCircle2 className="h-3.5 w-3.5 text-leaf" />
         <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-muted">
@@ -203,7 +202,7 @@ function ExecutionReview({ review, batches = [] }) {
 function MessageIcon({ role, type }) {
   if (role === "user") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-text text-ink-950 shadow-lg shadow-black/20">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-text text-ink-950 shadow-lg shadow-black/20">
         <User className="h-4.5 w-4.5" />
       </div>
     );
@@ -211,7 +210,7 @@ function MessageIcon({ role, type }) {
 
   if (role === "system" || type === "error") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-danger/15 text-danger ring-1 ring-danger/25">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-danger/15 text-danger ring-1 ring-danger/25">
         <AlertCircle className="h-4.5 w-4.5" />
       </div>
     );
@@ -219,7 +218,7 @@ function MessageIcon({ role, type }) {
 
   if (type === "execution_confirmation") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-leaf/15 text-leaf ring-1 ring-leaf/25">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-leaf/15 text-leaf ring-1 ring-leaf/25">
         <CheckCircle2 className="h-4.5 w-4.5" />
       </div>
     );
@@ -227,7 +226,7 @@ function MessageIcon({ role, type }) {
 
   if (type === "plan_intro") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-amber/15 text-amber ring-1 ring-amber/25">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber/15 text-amber ring-1 ring-amber/25">
         <ClipboardList className="h-4.5 w-4.5" />
       </div>
     );
@@ -235,52 +234,20 @@ function MessageIcon({ role, type }) {
 
   if (type === "plan_cancelled") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] text-text-muted ring-1 ring-line">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-text-muted ring-1 ring-line">
         <XCircle className="h-4.5 w-4.5" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand/15 text-brand ring-1 ring-brand/25">
-      <Bot className="h-4.5 w-4.5" />
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-panel font-heading text-sm font-bold text-brand">
+      N
     </div>
   );
 }
 
-function EmptyState({ prompts, onPrompt }) {
-  return (
-    <div className="flex min-h-full flex-col items-center justify-center px-4 py-10 text-center">
-      <motion.div
-        initial={{ opacity: 0, y: 14, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 220, damping: 22 }}
-        className="surface flex w-full max-w-2xl flex-col items-center rounded-[2rem] p-6 sm:p-8"
-      >
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-text text-ink-950 shadow-xl shadow-black/20">
-          <Sparkles className="h-7 w-7" />
-        </div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-text sm:text-3xl">
-          Ready for your next command
-        </h2>
-        <div className="mt-6 grid w-full gap-2 sm:grid-cols-3">
-          {prompts.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => onPrompt(prompt)}
-              className="min-h-24 rounded-2xl border border-line bg-white/[0.035] px-3 py-3 text-left text-xs font-semibold leading-relaxed text-text-soft transition hover:border-aqua/35 hover:bg-aqua/10 hover:text-text"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-export default function ConversationView({ prompts = [], onPrompt }) {
+export default function ConversationView() {
   const messages = useAppStore((s) => s.messages);
   const isLoading = useAppStore((s) => s.isLoading);
   const loadingStage = useAppStore((s) => s.loadingStage);
@@ -338,85 +305,83 @@ export default function ConversationView({ prompts = [], onPrompt }) {
     setSpeakingMessageId(null);
   };
 
+  if (messages.length === 0 && !isLoading) return null;
+
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      {messages.length === 0 && !isLoading ? (
-        <EmptyState prompts={prompts} onPrompt={onPrompt} />
-      ) : (
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-5 sm:px-6">
-          <AnimatePresence mode="popLayout">
-            {messages.map((msg) => {
-              const isUser = msg.role === "user";
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-5 sm:px-6">
+        <AnimatePresence mode="popLayout">
+          {messages.map((msg) => {
+            const isUser = msg.role === "user";
 
-              return (
-                <motion.div
-                  key={msg.id}
-                  variants={messageVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  layout
-                  className={`flex items-start gap-3 ${
-                    isUser ? "flex-row-reverse" : ""
+            return (
+              <motion.div
+                key={msg.id}
+                variants={messageVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                layout
+                className={`flex items-start gap-3 ${
+                  isUser ? "flex-row-reverse" : ""
+                }`}
+              >
+                <MessageIcon role={msg.role} type={msg.type} />
+
+                <div
+                  className={`max-w-[min(80%,720px)] px-4 py-3 ${
+                    isUser
+                      ? "rounded-[18px] rounded-br bg-brand/95 text-ink-950 shadow-[0_0_24px_rgba(174,203,250,0.2)]"
+                      : msg.type === "error"
+                        ? "nova-card rounded-lg border-danger/30 bg-danger/10 text-danger"
+                        : "nova-card rounded-lg text-text"
                   }`}
                 >
-                  <MessageIcon role={msg.role} type={msg.type} />
+                  <p className="whitespace-pre-line text-sm leading-relaxed">
+                    {msg.content}
+                  </p>
 
-                  <div
-                    className={`max-w-[min(76%,720px)] rounded-2xl px-4 py-3 ${
-                      isUser
-                        ? "rounded-tr-md bg-text text-ink-950 shadow-lg shadow-black/20"
-                        : msg.type === "error"
-                          ? "rounded-tl-md border border-danger/25 bg-danger/10 text-danger"
-                          : "rounded-tl-md border border-line bg-panel/80 text-text"
-                    }`}
+                  {msg.type === "intent" && msg.intent ? (
+                    <IntentDisplay intent={msg.intent} />
+                  ) : null}
+
+                  {msg.type === "execution_confirmation" && msg.execution?.review ? (
+                    <ExecutionReview
+                      review={msg.execution.review}
+                      batches={msg.execution.batches || []}
+                    />
+                  ) : null}
+
+                  <span
+                    className={`mt-2 block font-code text-[10px] ${
+                      isUser ? "text-ink-700" : "text-text-muted"
+                    } ${isUser ? "text-right" : ""}`}
                   >
-                    <p className="whitespace-pre-line text-sm leading-relaxed">
-                      {msg.content}
-                    </p>
+                    {new Date(msg.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
 
-                    {msg.type === "intent" && msg.intent ? (
-                      <IntentDisplay intent={msg.intent} />
-                    ) : null}
-
-                    {msg.type === "execution_confirmation" && msg.execution?.review ? (
-                      <ExecutionReview
-                        review={msg.execution.review}
-                        batches={msg.execution.batches || []}
-                      />
-                    ) : null}
-
-                    <span
-                      className={`mt-2 block font-code text-[10px] ${
-                        isUser ? "text-ink-700" : "text-text-muted"
-                      } ${isUser ? "text-right" : ""}`}
-                    >
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+                {/* Speaking indicator */}
+                {speakingId === msg.id && (
+                  <div className="mt-1">
+                    <SpeakingIndicator onStop={handleStopSpeaking} />
                   </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
 
-                  {/* Speaking indicator */}
-                  {speakingId === msg.id && (
-                    <div className="mt-1">
-                      <SpeakingIndicator onStop={handleStopSpeaking} />
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+        {isLoading ? <TypingIndicator stage={loadingStage} /> : null}
 
-          {isLoading ? <TypingIndicator stage={loadingStage} /> : null}
-
-          <div className="flex items-center justify-center pt-2 text-[11px] font-medium text-text-muted">
-            <Layers3 className="mr-1.5 h-3.5 w-3.5 text-aqua" />
-            {messages.length} messages in this session
-          </div>
+        <div className="flex items-center justify-center pt-2 text-[11px] font-medium text-text-muted">
+          <Layers3 className="mr-1.5 h-3.5 w-3.5 text-aqua" />
+          {messages.length} messages in this session
         </div>
-      )}
+      </div>
     </div>
   );
 }

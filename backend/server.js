@@ -6,6 +6,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
@@ -30,6 +31,13 @@ const {
   recordRoutineRun,
   startRoutineScheduler,
 } = require("./services/routines");
+const { validateEnv } = require("./middleware/validateEnv");
+const { authMiddleware } = require("./middleware/auth");
+const { sanitizeMiddleware } = require("./middleware/sanitize");
+const authRouter = require("./routes/auth");
+
+// ── Validate environment ──
+validateEnv();
 
 // ── Config ──
 const PORT = process.env.PORT || 3001;
@@ -37,9 +45,15 @@ const app = express();
 const server = http.createServer(app);
 
 // ── Middleware ──
-app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:3000" }));
+const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim());
+app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(sanitizeMiddleware);
+app.use(authMiddleware);
 
 // Multer for audio uploads
 const audioUpload = multer({
@@ -135,7 +149,7 @@ function fallbackIntent(text = "") {
     constraints: [],
     missing_info: [],
     confidence: 0.72,
-    spoken_response: "I can help with that. I will prepare a practical plan and route it to the right module.",
+    spoken_response: "I can help with that. I will make a practical call and keep you posted if anything important is missing.",
   };
 }
 
@@ -147,29 +161,29 @@ function fallbackPlan(intent = {}) {
     {
       step: 1,
       action: "parse_request",
-      description: `Understand the request: ${goal}`,
+      description: `Read the request and decide the most useful next move: ${goal}`,
       service: "ai",
       requires_input: false,
       estimated_duration_seconds: 2,
-      fallback: "Ask for a clearer request",
+      fallback: "Make a reasonable assumption and mention what can be corrected later",
     },
     {
       step: 2,
       action: `prepare_${module}_result`,
-      description: `Create a useful ${module} result for the user`,
+      description: `Prepare a useful ${module} result without unnecessary back-and-forth`,
       service: module === "search" ? "web" : "ai",
       requires_input: false,
       estimated_duration_seconds: 4,
-      fallback: "Save a local module note for manual follow-up",
+      fallback: "Save a clear note so the user can follow up without starting over",
     },
     {
       step: 3,
       action: "confirm_completion",
-      description: "Confirm the result and save it in the module workspace",
+      description: "Tell the user what happened and save it in the module workspace",
       service: "notification",
       requires_input: false,
       estimated_duration_seconds: 1,
-      fallback: "Log completion in the current session",
+      fallback: "Log the outcome in the current session",
     },
   ];
 }
@@ -187,7 +201,7 @@ function buildClarifyingQuestion(intent = {}) {
   }
 
   const goal = intent.goal || "that request";
-  return `I want to make sure I understood ${goal}. What is the main result you want?`;
+  return `I want to make sure I understood ${goal}. What should the final result look like?`;
 }
 
 function enrichIntent(intent = {}, sourceText = "") {
@@ -276,7 +290,7 @@ async function generatePlanForIntent(intent = {}) {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    service: "voiceai-backend",
+    service: "nova-voiceai",
     version: "2.0.0",
     ai_engine: ai.isAvailable() ? "gemini" : "mock",
     ai_router: ai.providerStatus ? ai.providerStatus() : undefined,
@@ -325,6 +339,7 @@ app.use("/tts", ttsRouter);
 app.use("/memories", memoriesRouter);
 app.use("/mcp", mcpRouter);
 app.use("/modules", modulesRouter);
+app.use("/api/auth", authRouter);
 
 // ── Intent Extraction (Gemini) ──
 app.post("/intent", async (req, res) => {
@@ -403,6 +418,53 @@ app.post("/plan", async (req, res) => {
   }
 });
 
+// ── Direct Chat (skip plan/execute for simple answers) ──
+app.post("/chat/direct", async (req, res) => {
+  try {
+    const { text, userId } = req.body;
+
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({
+        error: "Invalid request body",
+        hint: 'Send JSON with a "text" field.',
+      });
+    }
+
+    console.log(`[Chat] Direct answer for: "${text.substring(0, 80)}"`);
+
+    let memoriesContext = "";
+    try {
+      const memories = await recallMemory(userId || "default-user", text, 3);
+      if (memories.length > 0) {
+        memoriesContext = `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+      }
+    } catch (err) {
+      console.warn("[Chat] Memory recall skipped:", err.message);
+    }
+
+    const systemPrompt = `You are NOVA, a warm, direct, and practical voice-first AI assistant. Answer the user's question naturally and concisely. If it's a calculation, show the result. If it's a factual question, give the answer. Sound like a helpful person, not a robot. Do not describe steps or plans — just answer.${memoriesContext}`;
+
+    const answer = await ai.chat(systemPrompt, text, {
+      task: "chat",
+      maxTokens: 1200,
+      temperature: 0.4,
+    });
+
+    res.json({
+      success: true,
+      answer: answer.trim(),
+      metadata: { engine: "ai_router", mode: "direct" },
+    });
+  } catch (error) {
+    console.error("[Chat] Direct answer error:", error.message);
+    res.json({
+      success: true,
+      answer: "I wasn't able to process that right now. Could you try again?",
+      metadata: { engine: "local_fallback", reason: error.message },
+    });
+  }
+});
+
 function stepText(step) {
   return [
     step.description,
@@ -418,13 +480,13 @@ function stepText(step) {
 function externalServiceMessage(step) {
   const text = stepText(step);
   if (/calendar|meeting|schedule|invite/.test(text)) {
-    return "Calendar execution is not connected yet. The plan step is ready for a calendar connector.";
+    return "I can prepare the calendar step, but your calendar connector is not connected yet.";
   }
   if (/email|mail|message|sms|send/.test(text)) {
-    return "Messaging execution is not connected yet. The draft/send step needs a messaging connector.";
+    return "I can prepare the message, but sending needs a connected messaging connector.";
   }
   if (/notification|reminder/.test(text)) {
-    return "Reminder execution is not connected yet. The reminder step needs a notification connector.";
+    return "I can prepare the reminder, but notifications need a connected reminder connector.";
   }
   return null;
 }
@@ -437,7 +499,7 @@ async function executePlanStep(step, index) {
       step: index + 1,
       step_id: step.id || null,
       status: "waiting_for_input",
-      message: "This step needs user confirmation before it can run.",
+      message: "I need your call on this step before I run it.",
     };
   }
 
@@ -448,7 +510,7 @@ async function executePlanStep(step, index) {
       step: index + 1,
       step_id: step.id || null,
       status: result.success ? "completed" : "failed",
-      message: result.success ? "Search completed." : result.error,
+      message: result.success ? "I found the available search results." : result.error,
       result,
     };
   }
@@ -544,10 +606,10 @@ function fallbackExecutionReview(results = []) {
     status: failed.length ? "needs_attention" : blocked.length ? "partial" : "passed",
     confidence: Number(confidence.toFixed(2)),
     summary: blocked.length
-      ? `${completed.length} step(s) completed; ${blocked.length} step(s) need confirmation or connectors.`
+      ? `${completed.length} step(s) are done. ${blocked.length} still need your input or a connector.`
       : failed.length
-        ? `${failed.length} step(s) failed and should be retried or adjusted.`
-        : "All executable steps completed cleanly.",
+        ? `${failed.length} step(s) did not land cleanly. I would retry or adjust those.`
+        : "Everything I could run is done.",
     issues: [
       ...failed.map((step) => `Step ${step.step} failed: ${step.message || "unknown error"}`),
       ...blocked.map((step) => `Step ${step.step} is blocked: ${step.message}`),
@@ -564,7 +626,7 @@ async function reviewExecution({ plan, results, agent }) {
     const review = await ai.chatJSON(
       `You review an AI assistant execution result.
 Return ONLY JSON with: status ("passed"|"partial"|"needs_attention"), confidence (0-1), summary, issues array, corrections array.
-Be concise. Do not expose hidden reasoning.`,
+Be concise, natural, and practical. Sound like a human operator reporting back, not a machine log. Do not expose hidden reasoning.`,
       JSON.stringify({ plan, results, agent }),
       { task: "review", maxTokens: 1200, temperature: 0.2 }
     );
@@ -653,8 +715,8 @@ app.post("/execute", async (req, res) => {
     res.json({
       status: failed.length ? "partial" : "ok",
       message: blocked.length
-        ? `Executed ${results.length - blocked.length} step(s). ${blocked.length} step(s) need a connector or confirmation.`
-        : "Plan executed successfully.",
+        ? `I finished ${results.length - blocked.length} step(s). ${blocked.length} still need a connector or your input.`
+        : "Done. I handled the executable steps.",
       execution_id: executionId,
       steps_received: plan.length,
       batches: execution.batches,
@@ -916,11 +978,23 @@ app.use((err, req, res, next) => {
 const io = initializeSocket(server);
 app.set("io", io);
 
+// ── Serve frontend in production ──
+const publicDir = path.join(__dirname, "public");
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+  // SPA fallback — serve index.html for any non-API route
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/health")) return;
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+  console.log("[Server] Serving static frontend from /public");
+}
+
 // ── Start Server ──
 server.listen(PORT, () => {
   console.log("");
   console.log("╔══════════════════════════════════════════════╗");
-  console.log("║      VoxMind — Autonomous AI Platform        ║");
+  console.log("║        NOVA — Voice AI Platform              ║");
   console.log("╠══════════════════════════════════════════════╣");
   console.log(`║  Server:  http://localhost:${PORT}               ║`);
   console.log(`║  Engine:  ${(ai.isAvailable() ? "Google Gemini ✓" : "Mock Mode (no key)").padEnd(33)} ║`);

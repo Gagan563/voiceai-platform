@@ -32,101 +32,103 @@
   --color-vox-cancel: var(--vox-cancel);
 
   --color-ink-950: var(--vox-bg);
-  --color-ink-900: #0d1326;
-  --color-ink-850: #10182b;
+  --color-ink-900: #070a12;
+  --color-ink-850: #0b0f1a;
   --color-ink-800: var(--vox-surface-2);
-  --color-ink-700: #243149;
-  --color-ink-600: #33415c;
+  --color-ink-700: #1e2d4a;
+  --color-ink-600: #2c3e5e;
   --color-panel: var(--vox-surface-1);
   --color-panel-raised: var(--vox-surface-2);
+  --color-sidebar: var(--vox-sidebar);
   --color-line: var(--vox-border);
-  --color-line-strong: rgba(255, 255, 255, 0.16);
+  --color-line-strong: rgba(120, 180, 255, 0.12);
   --color-brand: var(--vox-primary);
-  --color-aqua: #42c6ff;
-  --color-coral: #f97362;
+  --color-aqua: #22d3ee;
+  --color-coral: #fb7185;
   --color-leaf: var(--vox-approve);
-  --color-amber: #f4b740;
+  --color-amber: #fbbf24;
   --color-danger: var(--vox-cancel);
   --color-text: var(--vox-text);
-  --color-text-soft: #c8d4e8;
+  --color-text-soft: #b8c7e0;
   --color-text-muted: var(--vox-text-muted);
 
-  --font-heading: "Outfit", system-ui, -apple-system, sans-serif;
-  --font-sans: "Outfit", "Manrope", system-ui, -apple-system, sans-serif;
-  --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+  --font-heading: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
 @layer base {
   :root {
-    /* shadcn light tokens (used when html is NOT .dark) */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 205 65% 47%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 40%;
-    --accent: 205 65% 47%;
-    --accent-foreground: 0 0% 100%;
+    --background: 220 30% 6%;
+    --foreground: 210 40% 96%;
+    --card: 220 28% 8%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 28% 8%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 190 80% 52%;
+    --primary-foreground: 220 30% 6%;
+    --secondary: 220 26% 14%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 220 26% 14%;
+    --muted-foreground: 215 18% 55%;
+    --accent: 190 80% 52%;
+    --accent-foreground: 220 30% 6%;
     --destructive: 0 72% 59%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 205 65% 47%;
+    --border: 220 24% 16%;
+    --input: 220 24% 16%;
+    --ring: 190 80% 52%;
     --radius: 0.5rem;
 
-    /* VoxMind palette: dark is default */
-    --vox-bg: #0a0f1e;
-    --vox-surface-1: #0d1326;
-    --vox-surface-2: #131b30;
-    --vox-primary: #2a82c8;
-    --vox-primary-glow: rgba(42, 130, 200, 0.5);
-    --vox-text: #f5f8ff;
-    --vox-text-muted: #94a3b8;
-    --vox-border: rgba(255, 255, 255, 0.1);
-    --vox-approve: #1a7a4a;
-    --vox-cancel: #e14d4d;
+    /* NOVA unique palette — deep navy + cyan */
+    --vox-bg: #06080f;
+    --vox-sidebar: #0a0e1a;
+    --vox-surface-1: #0e1322;
+    --vox-surface-2: #141a2e;
+    --vox-primary: #22d3ee;
+    --vox-primary-glow: rgba(34, 211, 238, 0.2);
+    --vox-text: #e8ecf4;
+    --vox-text-muted: #64748b;
+    --vox-border: rgba(100, 160, 255, 0.08);
+    --vox-approve: #34d399;
+    --vox-cancel: #fb7185;
   }
 
   .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-    --card: 222 44% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 44% 10%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 205 65% 47%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 205 65% 47%;
-    --accent-foreground: 0 0% 100%;
+    --background: 220 30% 6%;
+    --foreground: 210 40% 96%;
+    --card: 220 28% 8%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 28% 8%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 190 80% 52%;
+    --primary-foreground: 220 30% 6%;
+    --secondary: 220 26% 14%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 220 26% 14%;
+    --muted-foreground: 215 18% 55%;
+    --accent: 190 80% 52%;
+    --accent-foreground: 220 30% 6%;
     --destructive: 0 72% 59%;
     --destructive-foreground: 0 0% 100%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 205 65% 47%;
+    --border: 220 24% 16%;
+    --input: 220 24% 16%;
+    --ring: 190 80% 52%;
   }
 
   html.light {
-    --vox-bg: #f3f6fb;
+    --vox-bg: #f1f5fb;
+    --vox-sidebar: #e2eaf6;
     --vox-surface-1: #ffffff;
-    --vox-surface-2: #eef2f9;
-    --vox-primary: #2a82c8;
-    --vox-primary-glow: rgba(42, 130, 200, 0.28);
-    --vox-text: #0a0f1e;
-    --vox-text-muted: #51607a;
-    --vox-border: rgba(10, 15, 30, 0.1);
-    --vox-approve: #1a7a4a;
-    --vox-cancel: #d83c3c;
+    --vox-surface-2: #edf2fa;
+    --vox-primary: #0891b2;
+    --vox-primary-glow: rgba(8, 145, 178, 0.22);
+    --vox-text: #0c1222;
+    --vox-text-muted: #475569;
+    --vox-border: rgba(15, 23, 42, 0.08);
+    --vox-approve: #059669;
+    --vox-cancel: #dc2626;
   }
 }
 
@@ -150,7 +152,7 @@
     margin: 0;
     background-color: var(--vox-bg);
     color: var(--vox-text);
-    font-family: "Manrope", sans-serif;
+    font-family: "Inter", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition:
@@ -186,18 +188,18 @@
 
   ::selection {
     background: var(--vox-primary);
-    color: #fff;
+    color: #06080f;
   }
 }
 
 @layer utilities {
   .font-display,
   .font-heading {
-    font-family: "Outfit", sans-serif;
+    font-family: "Hanken Grotesk", sans-serif;
   }
 
   .font-body {
-    font-family: "Manrope", sans-serif;
+    font-family: "Inter", sans-serif;
   }
 
   .font-code,
@@ -205,10 +207,11 @@
     font-family: "JetBrains Mono", monospace;
   }
 
+  /* ── Scrollbar ── */
   .vox-scroll::-webkit-scrollbar,
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
 
   .vox-scroll::-webkit-scrollbar-track,
@@ -218,7 +221,7 @@
 
   .vox-scroll::-webkit-scrollbar-thumb,
   ::-webkit-scrollbar-thumb {
-    background: var(--vox-border);
+    background: rgba(100, 160, 255, 0.1);
     border-radius: 999px;
   }
 
@@ -227,39 +230,150 @@
     background: var(--vox-primary);
   }
 
+  /* ── Grid backgrounds ── */
   .vox-grid {
-    background-image: radial-gradient(var(--vox-border) 1px, transparent 1px);
-    background-size: 28px 28px;
+    background-image: radial-gradient(rgba(34, 211, 238, 0.06) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 
   .workspace-grid {
     background-image:
-      linear-gradient(var(--vox-border) 1px, transparent 1px),
-      linear-gradient(90deg, var(--vox-border) 1px, transparent 1px);
-    background-size: 36px 36px;
+      linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
+  /* ── Surfaces ── */
   .surface {
-    background: color-mix(in srgb, var(--vox-surface-1) 82%, transparent);
-    border: 1px solid var(--vox-border);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
+    background: linear-gradient(135deg, rgba(14, 19, 34, 0.9), rgba(20, 26, 46, 0.9));
+    border: 1px solid rgba(34, 211, 238, 0.08);
+    box-shadow: 0 0 30px rgba(34, 211, 238, 0.04), 0 20px 60px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .nova-card {
+    background: linear-gradient(145deg, var(--vox-surface-1), var(--vox-surface-2));
+    border: 1px solid rgba(100, 160, 255, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .nova-pill {
+    border: 1px solid rgba(34, 211, 238, 0.1);
+    background: linear-gradient(135deg, var(--vox-surface-1), var(--vox-surface-2));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .nova-glow {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.15), 0 0 60px rgba(34, 211, 238, 0.05);
+  }
+
+  /* ── Hero input aurora glow ── */
+  .hero-gradient-line {
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      #22d3ee 20%,
+      #a78bfa 40%,
+      #22d3ee 60%,
+      #34d399 80%,
+      transparent 100%
+    );
+    opacity: 0.6;
+    animation: aurora-sweep 4s ease-in-out infinite;
+    background-size: 200% 100%;
+  }
+
+  @keyframes aurora-sweep {
+    0% { background-position: 200% 0%; opacity: 0.4; }
+    50% { background-position: 0% 0%; opacity: 0.8; }
+    100% { background-position: 200% 0%; opacity: 0.4; }
+  }
+
+  /* ── Sidebar ── */
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--vox-text-muted);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    text-align: left;
+  }
+
+  .sidebar-item:hover {
+    background: rgba(34, 211, 238, 0.06);
+    color: var(--vox-text);
+  }
+
+  .sidebar-item.active {
+    background: rgba(34, 211, 238, 0.1);
+    color: var(--vox-primary);
+    box-shadow: inset 0 0 12px rgba(34, 211, 238, 0.05);
+  }
+
+  .sidebar-item svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+  }
+
+  /* ── Bottom banner ── */
+  .bottom-banner {
+    background: linear-gradient(135deg, var(--vox-surface-1), var(--vox-surface-2));
+    border: 1px solid rgba(100, 160, 255, 0.06);
+    border-radius: 14px;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ── Pulse blink ── */
+  @keyframes pulse-blink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.95); }
+  }
+
+  .animate-pulse-blink {
+    animation: pulse-blink 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* ── Nova orb float ── */
+  @keyframes orb-float {
+    0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+    50% { transform: translateY(-4px) scale(1.05); filter: brightness(1.2); }
+  }
+
+  .nova-orb-anim {
+    animation: orb-float 3.5s ease-in-out infinite;
+  }
+
+  /* ── Glow pulse for active elements ── */
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(34, 211, 238, 0.15); }
+    50% { box-shadow: 0 0 20px rgba(34, 211, 238, 0.3), 0 0 40px rgba(34, 211, 238, 0.1); }
+  }
+
+  .glow-pulse {
+    animation: glow-pulse 2.5s ease-in-out infinite;
   }
 }
 
+/* ── Dot loader ── */
 @keyframes dot-bounce {
-  0%,
-  80%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.65);
-  }
-
-  40% {
-    opacity: 1;
-    transform: scale(1);
-  }
+  0%, 80%, 100% { opacity: 0.45; transform: scale(0.65); }
+  40% { opacity: 1; transform: scale(1); }
 }
 
 .dot-loader span {
@@ -272,22 +386,12 @@
   animation: dot-bounce 1.4s infinite ease-in-out both;
 }
 
-.dot-loader span:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.dot-loader span:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-.dot-loader span:nth-child(3) {
-  animation-delay: 0s;
-}
+.dot-loader span:nth-child(1) { animation-delay: -0.32s; }
+.dot-loader span:nth-child(2) { animation-delay: -0.16s; }
+.dot-loader span:nth-child(3) { animation-delay: 0s; }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;

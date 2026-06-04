@@ -1,30 +1,101 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [vector]
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
+// ── User ──
 model User {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  memories  Memory[]
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  role      String   @default("user")
+  mode      String   @default("local")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memories Memory[]
+  sessions Session[]
+
+  @@map("users")
 }
 
+// ── Memory (long-term facts) ──
 model Memory {
-  id        String                      @id @default(uuid())
-  userId    String
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String   @default("fact")
   content   String
-  embedding Unsupported("vector(1536)")
-  createdAt DateTime                    @default(now())
+  source    String?
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@map("memories")
+}
+
+// ── Session (conversation history) ──
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages Message[]
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ── Message ──
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  role      String
+  content   String
+  type      String?
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("messages")
+}
+
+// ── Routine (scheduled automations) ──
+model Routine {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  trigger     String
+  actions     Json
+  enabled     Boolean  @default(true)
+  lastRun     DateTime? @map("last_run")
+  runCount    Int      @default(0) @map("run_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("routines")
+}
+
+// ── Execution log ──
+model Execution {
+  id        String   @id @default(cuid())
+  intent    Json?
+  plan      Json?
+  result    Json?
+  status    String   @default("pending")
+  duration  Int?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("executions")
 }

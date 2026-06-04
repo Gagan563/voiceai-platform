@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   deleteMemory as apiDeleteMemory,
+  directChat,
   executePlan,
   extractIntent,
   generatePlan,
@@ -24,6 +25,12 @@ const defaultSettings = {
   voiceActivationEnabled: false,
   memoryEnabled: true,
   fontSize: "medium",
+};
+
+const defaultAuth = {
+  isAuthenticated: false,
+  user: null,
+  lastLoginAt: null,
 };
 
 const normalizeTimestamp = (timestamp) =>
@@ -69,23 +76,95 @@ const normalizePlan = (response) => {
 const getErrorMessage = (error, fallback) =>
   error?.hint ? `${error.message} ${error.hint}` : error?.message || fallback;
 
+const codingApprovalPattern =
+  /\b(code|coding|developer|filesystem|file|files|write_file|modify_file|local_file|terminal|command|shell|git|github|deploy|deployment|build|app|website|dashboard|preview|package|install|npm|test|lint|server|database migration)\b/i;
+
+const needsCodingApproval = (plan = [], intent = {}) => {
+  const intentText = [
+    intent.module,
+    intent.action_type,
+    intent.goal,
+    ...(intent.steps || []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (codingApprovalPattern.test(intentText)) return true;
+
+  return plan.some((step) =>
+    codingApprovalPattern.test(
+      [
+        step.service,
+        step.action,
+        step.action_type,
+        step.description,
+        step.fallback,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    )
+  );
+};
+
 const getCasualReply = (text = "") => {
   const clean = text.trim().toLowerCase().replace(/[.!?'"`]+$/g, "");
 
   if (/^(hi|hello|hey|yo|sup|hii|hiii|good morning|good afternoon|good evening)$/.test(clean)) {
-    return "Hey, I'm here. Tell me what you want to build, fix, research, or automate.";
+    return "Hey. I'm here with you. Tell me what you want done and I'll handle the moving parts.";
   }
 
   if (/^(thanks|thank you|thx|ok|okay|cool|nice|great)$/.test(clean)) {
-    return "You got it. I'm ready when you are.";
+    return "Of course. I'm right here when you want to keep going.";
   }
 
   if (/^(who are you|what can you do)$/.test(clean)) {
-    return "I'm your voice-first AI workspace. I can take a requirement by file, voice, or text, turn it into a plan, and help build or preview the result.";
+    return "I'm NOVA, your voice-first workspace. You can talk to me like a person: ask, correct me, drop a file, or tell me to build something, and I'll keep the work organized.";
+  }
+
+  if (/(dumb ai|stupid ai|act like human|be human|not robotic|not dumb)/.test(clean)) {
+    return "Fair. I'll be more direct, more natural, and less checklist-brained. Tell me what you need and I'll respond like a collaborator, not a form.";
   }
 
   return null;
 };
+
+const humanAcknowledgement = (intent = {}) => {
+  if (intent.spoken_response) return intent.spoken_response;
+
+  const goal = intent.goal || "that";
+  const action = intent.action_type || "answer";
+
+  if (action === "schedule") {
+    return `I can help with that. I'll line up the details for ${goal} and tell you what is missing, if anything.`;
+  }
+  if (action === "search") {
+    return `I'll look into ${goal} and keep the useful bits, not a pile of noise.`;
+  }
+  if (action === "remind") {
+    return `Got it. I'll treat this like a real reminder, with timing and follow-up handled cleanly.`;
+  }
+  if (action === "create") {
+    return `I see what you're going for. I'll shape it into something usable instead of just describing it.`;
+  }
+  if (action === "control") {
+    return `Understood. I'll check the control step before doing anything that changes your environment.`;
+  }
+
+  return `I understand. I'll handle ${goal} in the most practical way I can.`;
+};
+
+const humanPlanIntro = (plan = [], intent = {}) => {
+  const goal = intent.goal || "this";
+  if (plan.length <= 2) {
+    return `This is straightforward. I have the path for ${goal}.`;
+  }
+  return `I broke this into ${plan.length} steps so I can move through it cleanly without losing the thread.`;
+};
+
+const humanAutopilotMessage = (approvalRequired) =>
+  approvalRequired
+    ? "This touches coding or developer tools, so I'll pause here for your approval before I run it."
+    : "No coding approval needed here. I'll go ahead and do it.";
 
 const titleFromGoal = (goal = "AI workspace") => {
   const clean = goal
@@ -267,6 +346,7 @@ export const useAppStore = create(
       memories: initialMemories,
       sessions: seededSessions,
       hasOnboarded: false,
+      auth: defaultAuth,
       darkMode: true,
       isPanelOpen: null,
       viewingSessionId: null,
@@ -335,6 +415,39 @@ export const useAppStore = create(
 
       completeOnboarding: () => set({ hasOnboarded: true }),
 
+      login: ({ email, name, mode = "local" }) => {
+        const cleanEmail = (email || "").trim().toLowerCase();
+        const cleanName = (name || "").trim();
+        const displayName =
+          cleanName ||
+          cleanEmail.split("@")[0]?.replace(/[._-]+/g, " ") ||
+          "Owner";
+
+        set({
+          auth: {
+            isAuthenticated: true,
+            user: {
+              id: cleanEmail || `local-${uid()}`,
+              email: cleanEmail,
+              name: displayName,
+              mode,
+            },
+            lastLoginAt: new Date().toISOString(),
+          },
+        });
+      },
+
+      logout: () =>
+        set({
+          auth: defaultAuth,
+          currentPlan: null,
+          previewArtifact: null,
+          viewingSessionId: null,
+          isLoading: false,
+          loadingStage: null,
+          error: null,
+        }),
+
       addMessage: (roleOrMessage, content, meta = {}) => {
         const message =
           typeof roleOrMessage === "object"
@@ -400,10 +513,12 @@ export const useAppStore = create(
             throw new Error("The backend did not return an intent.");
           }
 
+          const acknowledgement = humanAcknowledgement(intent);
+
           get().addMessage({
             role: "assistant",
-            text: "Got it. I understand what you're aiming for.",
-            content: "Got it. I understand what you're aiming for.",
+            text: acknowledgement,
+            content: acknowledgement,
             type: "intent",
             intent,
             timestamp: Date.now(),
@@ -411,14 +526,49 @@ export const useAppStore = create(
 
           set({ lastIntent: intent, loadingStage: "plan" });
 
+          // ── Direct answer shortcut ──
+          // If the intent is a simple Q&A (answer type, high confidence, chat module),
+          // skip the plan/execute pipeline and answer directly.
+          const isDirectAnswer =
+            intent.action_type === "answer" &&
+            intent.module === "chat" &&
+            (intent.confidence || 0) >= 0.7;
+
+          if (isDirectAnswer) {
+            try {
+              const chatResponse = await directChat(effectiveText);
+              const answer = chatResponse.answer || chatResponse.spoken_response || "I'm not sure how to answer that.";
+
+              get().addMessage({
+                role: "assistant",
+                text: answer,
+                content: answer,
+                type: "chat",
+                timestamp: Date.now(),
+              });
+
+              set({
+                isLoading: false,
+                loadingStage: null,
+                activeModule: "chat",
+              });
+
+              get()._snapshotSession();
+              return;
+            } catch (directError) {
+              console.warn("[Direct chat failed, falling back to plan]", directError);
+              // Fall through to the normal plan/execute flow
+            }
+          }
+
           if (!pendingClarification && intent.clarification?.required) {
             const suggestion =
               intent.clarification.question ||
-              "I made a sensible default. You can adjust it after I show the result.";
+              "I can make a sensible default, and you can correct me if I read it wrong.";
             get().addMessage({
               role: "assistant",
-              text: `Suggestion: ${suggestion}`,
-              content: `Suggestion: ${suggestion}`,
+              text: `One detail may matter: ${suggestion}`,
+              content: `One detail may matter: ${suggestion}`,
               type: "suggestion",
               timestamp: Date.now(),
             });
@@ -435,13 +585,17 @@ export const useAppStore = create(
             throw new Error("The backend did not return a usable plan.");
           }
 
+          const planIntro = humanPlanIntro(plan, intent);
+
           get().addMessage({
             role: "assistant",
-            text: `I mapped that into ${plan.length} steps. I'll keep the preview visible while I work through it.`,
-            content: `I mapped that into ${plan.length} steps. I'll keep the preview visible while I work through it.`,
+            text: planIntro,
+            content: planIntro,
             type: "plan_intro",
             timestamp: Date.now(),
           });
+
+          const approvalRequired = needsCodingApproval(plan, intent);
 
           set({
             currentPlan: plan,
@@ -456,11 +610,21 @@ export const useAppStore = create(
             loadingStage: null,
           });
 
-          if (get().settings.autopilotEnabled) {
+          if (approvalRequired) {
+            const approvalMessage = humanAutopilotMessage(true);
             get().addMessage({
               role: "assistant",
-              text: "I'm on it. Running the safe preview build now.",
-              content: "I'm on it. Running the safe preview build now.",
+              text: approvalMessage,
+              content: approvalMessage,
+              type: "approval_required",
+              timestamp: Date.now(),
+            });
+          } else {
+            const autopilotMessage = humanAutopilotMessage(false);
+            get().addMessage({
+              role: "assistant",
+              text: autopilotMessage,
+              content: autopilotMessage,
               type: "autopilot",
               timestamp: Date.now(),
             });
@@ -515,7 +679,7 @@ export const useAppStore = create(
           const result = await executePlan(plan);
           const executionId = result.execution_id || `exec_${uid()}`;
           const reviewSummary = result.review?.summary ? ` Review: ${result.review.summary}` : "";
-          const message = `${result.message || "Done. I finished the safe preview run."}${reviewSummary}`;
+          const message = `${result.message || "Done. I finished it."}${reviewSummary}`;
           const intent = get().lastIntent;
           const sourceText =
             get().messages.findLast?.((message) => message.role === "user")?.content ||
@@ -526,8 +690,8 @@ export const useAppStore = create(
           get().addMessage({
             role: "assistant",
             text: message,
-            content: `${message} ID: ${executionId}${
-              selectedStepIds?.length ? ` Executed ${plan.length} selected step(s).` : ""
+            content: `${message}${
+              selectedStepIds?.length ? ` I only ran the ${plan.length} step(s) you selected.` : ""
             }`,
             status: "completed",
             type: "execution_confirmation",
@@ -730,6 +894,7 @@ export const useAppStore = create(
         memories: state.memories,
         sessions: state.sessions,
         hasOnboarded: state.hasOnboarded,
+        auth: state.auth,
         darkMode: state.darkMode,
         currentSessionId: state.currentSessionId,
         activeModule: state.activeModule,
@@ -752,6 +917,11 @@ export const useAppStore = create(
           sttMode: settings.sttMode,
           messages: (state.messages || seededMessages).map(normalizeMessage),
           sessions: (state.sessions || seededSessions).map(normalizeSession),
+          auth: {
+            ...defaultAuth,
+            ...(state.auth || {}),
+            user: state.auth?.user || null,
+          },
           activeModule: state.activeModule || "chat",
           moduleRecords: state.moduleRecords || {},
         };

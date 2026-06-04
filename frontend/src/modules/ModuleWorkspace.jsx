@@ -130,7 +130,7 @@ function ModulePicker({ activeModule, setActiveModule }) {
             key={module.id}
             type="button"
             onClick={() => setActiveModule(module.id)}
-            className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 text-[11px] font-semibold transition ${
+            className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition ${
               selected
                 ? "border-brand/35 bg-brand/15 text-text"
                 : "border-line bg-white/[0.03] text-text-muted hover:border-aqua/30 hover:text-text"
@@ -148,7 +148,7 @@ function ModulePicker({ activeModule, setActiveModule }) {
 function RecordList({ records }) {
   if (!records.length) {
     return (
-      <div className="rounded-2xl border border-line bg-white/[0.035] p-4 text-sm leading-relaxed text-text-muted">
+      <div className="nova-card rounded-lg p-4 text-sm leading-relaxed text-text-muted">
         No saved results in this module yet. Speak, type, or use a quick action below.
       </div>
     );
@@ -157,7 +157,7 @@ function RecordList({ records }) {
   return (
     <div className="space-y-2">
       {records.map((record) => (
-        <div key={record.id} className="rounded-2xl border border-line bg-white/[0.035] p-3">
+        <div key={record.id} className="nova-card rounded-lg p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-text">{record.title}</p>
@@ -175,7 +175,7 @@ function RecordList({ records }) {
               {record.steps.slice(0, 4).map((step) => (
                 <div
                   key={step}
-                  className="flex items-start gap-2 rounded-xl border border-line bg-ink-950/35 px-2 py-1.5 text-[11px] text-text-soft"
+              className="flex items-start gap-2 rounded-lg border border-line bg-ink-950/35 px-2 py-1.5 text-[11px] text-text-soft"
                 >
                   <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-leaf" />
                   <span>{step}</span>
@@ -215,7 +215,7 @@ function QuickAdd({ moduleId }) {
   };
 
   return (
-    <div className="rounded-2xl border border-line bg-panel/65 p-3">
+    <div className="nova-card rounded-lg p-3">
       <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
         <Plus className="h-3.5 w-3.5 text-aqua" />
         Quick action
@@ -228,12 +228,12 @@ function QuickAdd({ moduleId }) {
             if (event.key === "Enter") add(value);
           }}
           placeholder={`Add to ${moduleCopy[moduleId].title}...`}
-          className="min-w-0 flex-1 rounded-xl border border-line bg-ink-950/50 px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus:border-aqua/40"
+          className="min-w-0 flex-1 rounded-lg border border-line bg-ink-950/50 px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus:border-brand/40"
         />
         <button
           type="button"
           onClick={() => add(value)}
-          className="rounded-xl bg-brand px-3 text-xs font-bold text-white transition hover:brightness-110"
+          className="rounded-lg bg-brand px-3 text-xs font-bold text-ink-950 transition hover:brightness-110"
         >
           Save
         </button>
@@ -250,7 +250,7 @@ function ModuleBody({ moduleId, records }) {
       <div className="space-y-3">
         <div className="grid gap-2">
           {demoDevices.map((device) => (
-            <div key={device.name} className="flex items-center justify-between rounded-xl border border-line bg-white/[0.035] px-3 py-2">
+            <div key={device.name} className="flex items-center justify-between rounded-lg border border-line bg-white/[0.035] px-3 py-2">
               <span className="text-sm font-semibold text-text-soft">{device.name}</span>
               <span className="rounded-full border border-aqua/25 bg-aqua/10 px-2 py-1 text-xs font-bold text-aqua">
                 {device.state}
@@ -269,7 +269,7 @@ function ModuleBody({ moduleId, records }) {
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
           {["Food", "Bills", "Savings"].map((label, index) => (
-            <div key={label} className="rounded-xl border border-line bg-white/[0.035] p-3">
+            <div key={label} className="rounded-lg border border-line bg-white/[0.035] p-3">
               <BadgeDollarSign className="mb-2 h-4 w-4 text-leaf" />
               <p className="text-xs font-bold text-text">{label}</p>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
@@ -287,7 +287,7 @@ function ModuleBody({ moduleId, records }) {
   if (moduleId === "health") {
     return (
       <div className="space-y-3">
-        <div className="rounded-2xl border border-amber/25 bg-amber/10 p-3 text-xs leading-relaxed text-amber">
+        <div className="rounded-lg border border-amber/25 bg-amber/10 p-3 text-xs leading-relaxed text-amber">
           This is not medical advice. For urgent or serious symptoms, contact a doctor or emergency service.
         </div>
         <QuickAdd moduleId={moduleId} />
@@ -300,12 +300,12 @@ function ModuleBody({ moduleId, records }) {
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-line bg-white/[0.035] p-3">
+          <div className="rounded-lg border border-line bg-white/[0.035] p-3">
             <Languages className="mb-2 h-4 w-4 text-leaf" />
             <p className="text-xs font-bold text-text">Conversation mode</p>
             <p className="mt-1 text-[11px] text-text-muted">Speak in one language and hear another.</p>
           </div>
-          <div className="rounded-xl border border-line bg-white/[0.035] p-3">
+          <div className="rounded-lg border border-line bg-white/[0.035] p-3">
             <Mic className="mb-2 h-4 w-4 text-aqua" />
             <p className="text-xs font-bold text-text">Voice ready</p>
             <p className="mt-1 text-[11px] text-text-muted">Uses the global Whisper recorder.</p>
@@ -322,7 +322,7 @@ function ModuleBody({ moduleId, records }) {
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
           {["Lesson", "Quiz", "Flashcards"].map((label) => (
-            <div key={label} className="rounded-xl border border-line bg-white/[0.035] p-3">
+            <div key={label} className="rounded-lg border border-line bg-white/[0.035] p-3">
               <BookOpen className="mb-2 h-4 w-4 text-amber" />
               <p className="text-xs font-bold text-text">{label}</p>
             </div>
@@ -342,7 +342,7 @@ function ModuleBody({ moduleId, records }) {
           <button
             key={suggestion}
             type="button"
-            className="rounded-xl border border-line bg-white/[0.035] px-3 py-2 text-left text-xs font-semibold text-text-soft transition hover:border-aqua/30 hover:text-text"
+            className="rounded-lg border border-line bg-white/[0.035] px-3 py-2 text-left text-xs font-semibold text-text-soft transition hover:border-brand/30 hover:text-text"
           >
             {suggestion}
           </button>
@@ -371,11 +371,11 @@ export default function ModuleWorkspace() {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 24 }}
       transition={{ type: "spring", stiffness: 240, damping: 24 }}
-      className="hidden min-h-0 border-l border-line bg-ink-950/35 xl:flex xl:flex-col"
+      className="hidden min-h-0 border-l border-white/10 bg-panel/70 backdrop-blur-xl xl:flex xl:flex-col"
     >
       <div className="shrink-0 border-b border-line px-4 py-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand/15 text-brand ring-1 ring-brand/25">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/15 text-brand ring-1 ring-brand/25">
             <ActiveIcon className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -389,7 +389,7 @@ export default function ModuleWorkspace() {
 
       <div className="grid grid-cols-3 gap-2 border-y border-line px-4 py-3">
         {copy.metrics.map((metric) => (
-          <div key={metric} className="rounded-xl border border-line bg-white/[0.035] px-2 py-2 text-center text-[11px] font-bold text-text-soft">
+          <div key={metric} className="rounded-lg border border-line bg-white/[0.035] px-2 py-2 text-center text-[11px] font-bold text-text-soft">
             {metric}
           </div>
         ))}
@@ -400,7 +400,7 @@ export default function ModuleWorkspace() {
       </div>
 
       <div className="shrink-0 border-t border-line px-4 py-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-line bg-white/[0.035] px-3 py-2 text-xs font-semibold text-text-muted">
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-white/[0.035] px-3 py-2 text-xs font-semibold text-text-muted">
           <Activity className="h-4 w-4 text-aqua" />
           {records.length} saved result{records.length === 1 ? "" : "s"} in this module
         </div>

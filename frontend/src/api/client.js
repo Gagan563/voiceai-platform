@@ -259,6 +259,19 @@ export async function healthCheck() {
   return apiClient.get("/health");
 }
 
+export async function directChat(text) {
+  if (USE_MOCK) {
+    await delay(400, 800);
+    return {
+      success: true,
+      answer: `Here's my answer: I processed "${text}" directly.`,
+      metadata: { engine: "mock", mode: "direct" },
+    };
+  }
+
+  return apiClient.post("/chat/direct", { text });
+}
+
 export async function extractIntent(text) {
   const model = getSelectedModel();
 

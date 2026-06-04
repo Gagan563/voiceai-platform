@@ -1,192 +1,44 @@
-import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  Activity,
-  Bot,
-  Brain,
-  CalendarClock,
-  CheckCircle2,
-  Cpu,
-  DatabaseZap,
-  History,
-  MessageSquareText,
-  Network,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
-  Volume2,
-  VolumeX,
-  Wifi,
-  WifiOff,
-  Zap,
-} from "lucide-react";
-import ConversationView from "@/components/ConversationView";
-import InputBar from "@/components/InputBar";
-import PlanCards from "@/components/PlanCards";
+import { useEffect, useState } from "react";
+import { Settings as SettingsIcon } from "lucide-react";
+import Sidebar from "@/components/Sidebar";
+import HeroPrompt from "@/components/HeroPrompt";
+import BuilderView from "@/components/BuilderView";
 import MemoryView from "@/components/MemoryView";
 import VoiceActivation from "@/components/VoiceActivation";
-import VoxLogo from "@/components/VoxLogo";
 import HistoryPanel from "@/components/HistoryPanel";
 import Onboarding from "@/components/Onboarding";
+import LoginPage from "@/components/LoginPage";
 import SettingsPanel from "@/components/SettingsPanel";
 import RoutinesPanel from "@/components/RoutinesPanel";
+import RequirementsPanel from "@/components/RequirementsPanel";
 import ToastStack from "@/components/ToastStack";
-import ModuleWorkspace from "@/modules/ModuleWorkspace";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import "./App.css";
 
-const promptChips = [
-  "Schedule a meeting with Sarah tomorrow at 3pm",
-  "Track my food budget and bills this week",
-  "Translate this into Spanish and say it aloud",
-];
-
-const sidebarItems = [
-  { label: "Intent engine", icon: Sparkles, color: "text-brand" },
-  { label: "Plan builder", icon: Network, color: "text-aqua" },
-  { label: "Execution queue", icon: DatabaseZap, color: "text-amber" },
-  { label: "Policy checks", icon: ShieldCheck, color: "text-leaf" },
-];
-
-const modelOptions = [
-  {
-    value: "claude-sonnet-4-20250514",
-    label: "Sonnet 4",
-  },
-  {
-    value: "claude-opus-4-20250514",
-    label: "Opus 4",
-  },
-  {
-    value: "claude-3-5-sonnet-20241022",
-    label: "Sonnet 3.5",
-  },
-];
-
-function StatusPill({ online }) {
-  const status = useMemo(() => {
-    if (online === null) {
-      return {
-        label: "Checking",
-        icon: Activity,
-        className: "text-text-muted border-line bg-white/[0.04]",
-      };
-    }
-
-    if (online) {
-      return {
-        label: "Online",
-        icon: Wifi,
-        className: "text-leaf border-leaf/25 bg-leaf/10",
-      };
-    }
-
-    return {
-      label: "Offline",
-      icon: WifiOff,
-      className: "text-danger border-danger/25 bg-danger/10",
-    };
-  }, [online]);
-
-  const Icon = status.icon;
-
-  return (
-    <div
-      className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${status.className}`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {status.label}
-    </div>
-  );
-}
-
-function Sidebar({ backendOnline, onPrompt }) {
-  return (
-    <aside className="hidden min-h-0 border-r border-line bg-ink-950/55 px-4 py-5 lg:flex lg:flex-col">
-      <div className="px-1">
-        <VoxLogo size={44} />
-        <p className="mt-2 text-xs font-medium text-text-muted">
-          Voice control workspace
-        </p>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-line bg-panel/70 p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
-            Backend
-          </span>
-          <StatusPill online={backendOnline} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {sidebarItems.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <div
-                key={item.label}
-                className="rounded-xl border border-line bg-white/[0.035] p-3"
-              >
-                <Icon className={`mb-3 h-4 w-4 ${item.color}`} />
-                <p className="text-xs font-semibold leading-snug text-text-soft">
-                  {item.label}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-5 space-y-2">
-        <div className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
-          <MessageSquareText className="h-3.5 w-3.5" />
-          Prompts
-        </div>
-        {promptChips.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            onClick={() => onPrompt(prompt)}
-            className="w-full rounded-xl border border-line bg-panel/60 px-3 py-3 text-left text-xs font-medium leading-relaxed text-text-soft transition hover:border-aqua/35 hover:bg-aqua/10 hover:text-text"
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-auto rounded-2xl border border-line bg-panel/70 p-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-text-soft">
-          <History className="h-4 w-4 text-coral" />
-          Local session
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-text-muted">
-          Conversation state stays in this browser session.
-        </p>
-      </div>
-    </aside>
-  );
-}
-
 export default function App() {
   const [backendOnline, setBackendOnline] = useState(null);
+  const [activeView, setActiveView] = useState("playground");
+
+  // Panel states
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [routinesPanelOpen, setRoutinesPanelOpen] = useState(false);
+  const [requirementsPanelOpen, setRequirementsPanelOpen] = useState(false);
+
+  // Store
   const messages = useAppStore((s) => s.messages);
-  const currentPlan = useAppStore((s) => s.currentPlan);
   const isLoading = useAppStore((s) => s.isLoading);
   const processUserInput = useAppStore((s) => s.processUserInput);
   const clearMessages = useAppStore((s) => s.clearMessages);
   const settings = useAppStore((s) => s.settings);
   const error = useAppStore((s) => s.error);
-  const setSelectedModel = useAppStore((s) => s.setSelectedModel);
-  const toggleTtsEnabled = useAppStore((s) => s.toggleTtsEnabled);
-  const toggleTtsMode = useAppStore((s) => s.toggleTtsMode);
+  const auth = useAppStore((s) => s.auth);
 
+  // Health check
   useEffect(() => {
-    const checkHealth = async () => {
+    const check = async () => {
       try {
         await healthCheck();
         setBackendOnline(true);
@@ -194,229 +46,93 @@ export default function App() {
         setBackendOnline(false);
       }
     };
-
-    checkHealth();
-    const interval = setInterval(checkHealth, 30000);
+    check();
+    const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  // Font size
   useEffect(() => {
     document.documentElement.classList.remove("fs-small", "fs-medium", "fs-large");
     document.documentElement.classList.add(`fs-${settings.fontSize || "medium"}`);
   }, [settings.fontSize]);
 
   const handlePrompt = (prompt) => {
-    if (!isLoading) {
-      processUserInput(prompt);
+    if (!isLoading) processUserInput(prompt);
+  };
+
+  const handleOpenPanel = (panel) => {
+    switch (panel) {
+      case "memory": setMemoryPanelOpen(true); break;
+      case "history": setHistoryPanelOpen(true); break;
+      case "settings": setSettingsPanelOpen(true); break;
+      case "routines": setRoutinesPanelOpen(true); break;
+      case "requirements": setRequirementsPanelOpen(true); break;
+      case "modules": setRoutinesPanelOpen(true); break;
     }
   };
 
+  const handleBackToStart = () => {
+    clearMessages();
+  };
+
+  if (!auth?.isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  const hasConversation = messages.length > 0 || isLoading;
+
   return (
-    <div className="App workspace-grid h-full bg-ink-950 text-text">
-      <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)]">
-        <Sidebar backendOnline={backendOnline} onPrompt={handlePrompt} />
+    <div className="App flex h-full bg-[var(--vox-bg)] text-text">
+      {/* Left sidebar — hidden in builder mode for more space */}
+      {!hasConversation && (
+        <Sidebar
+          activeView={activeView}
+          onNavigate={setActiveView}
+          user={auth.user}
+          onOpenPanel={handleOpenPanel}
+        />
+      )}
 
-        <main className="flex min-h-0 flex-col">
-          <header className="shrink-0 border-b border-line bg-ink-950/55 px-4 py-3 backdrop-blur-xl sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-panel-raised ring-1 ring-line lg:hidden">
-                  <Bot className="h-5 w-5 text-aqua" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-display text-sm font-semibold text-text sm:text-base">
-                    VoxMind console
-                  </p>
-                  <div className="mt-1 hidden items-center gap-2 text-xs text-text-muted sm:flex">
-                    <Zap className="h-3.5 w-3.5 text-amber" />
-                    Intent to plan to execution
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
+      {/* Main area */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {hasConversation ? (
+          /* ── Builder mode ── */
+          <BuilderView onBack={handleBackToStart} />
+        ) : (
+          /* ── Idle / Hero mode ── */
+          <>
+            {/* Top bar */}
+            <header className="flex h-[52px] shrink-0 items-center justify-end border-b border-[rgba(255,255,255,0.06)] px-4 lg:px-6">
+              <div className="flex items-center gap-2">
                 <VoiceActivation />
-
-                <motion.button
+                <button
                   type="button"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setRoutinesPanelOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-leaf/25 hover:bg-leaf/10 hover:text-leaf"
-                  title="Open Routines"
-                  aria-label="Open Routines"
-                >
-                  <CalendarClock className="h-4 w-4" />
-                </motion.button>
-
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setHistoryPanelOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-aqua/25 hover:bg-aqua/10 hover:text-aqua"
-                  title="Open History"
-                  aria-label="Open History"
-                >
-                  <History className="h-4 w-4" />
-                </motion.button>
-
-                <label
-                  className="hidden h-9 items-center gap-2 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition focus-within:border-aqua/35 focus-within:text-text md:flex"
-                  title="Select AI model"
-                >
-                  <Cpu className="h-3.5 w-3.5 text-aqua" />
-                  <select
-                    value={settings.selectedModel}
-                    onChange={(event) => setSelectedModel(event.target.value)}
-                    className="max-w-28 bg-transparent text-xs font-semibold text-text outline-none"
-                    aria-label="Select AI model"
-                  >
-                    {modelOptions.map((model) => (
-                      <option
-                        key={model.value}
-                        value={model.value}
-                        className="bg-ink-950 text-text"
-                      >
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* TTS Toggle */}
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={toggleTtsEnabled}
-                  className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
-                    settings.ttsEnabled
-                      ? "border-brand/25 bg-brand/10 text-brand"
-                      : "border-line bg-white/[0.04] text-text-muted"
-                  }`}
-                  title={settings.ttsEnabled ? "Turn TTS off" : "Turn TTS on"}
-                >
-                  {settings.ttsEnabled ? (
-                    <Volume2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <VolumeX className="h-3.5 w-3.5" />
-                  )}
-                  TTS
-                </motion.button>
-
-                {/* TTS Mode Toggle (only visible when TTS is on) */}
-                {settings.ttsEnabled && (
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "auto" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={toggleTtsMode}
-                    className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition hover:border-brand/25 hover:text-text"
-                    title="Switch TTS engine"
-                  >
-                    {settings.ttsMode === "browser" ? "Browser" : "ElevenLabs"}
-                  </motion.button>
-                )}
-
-                <StatusPill online={backendOnline} />
-                {messages.length > 0 && (
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={clearMessages}
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
-                    title="Clear conversation"
-                    aria-label="Clear conversation"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </motion.button>
-                )}
-
-                {/* Memory Bank button */}
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setMemoryPanelOpen(true)}
-                  className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-white/[0.04] px-3 text-xs font-semibold text-text-muted transition hover:border-brand/25 hover:bg-brand/10 hover:text-brand"
-                  title="Open Memory Bank"
-                >
-                  <Brain className="h-3.5 w-3.5" />
-                  Memory
-                </motion.button>
-
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
                   onClick={() => setSettingsPanelOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-white/[0.04] text-text-muted transition hover:border-aqua/25 hover:bg-aqua/10 hover:text-aqua"
-                  title="Open Settings"
-                  aria-label="Open Settings"
+                  className="grid h-9 w-9 place-items-center rounded-full text-text-muted transition hover:bg-white/[0.06] hover:text-text"
+                  title="Settings"
+                  aria-label="Settings"
                 >
-                  <Settings className="h-4 w-4" />
-                </motion.button>
+                  <SettingsIcon className="h-[18px] w-[18px]" />
+                </button>
               </div>
+            </header>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <HeroPrompt onSubmit={handlePrompt} />
             </div>
-          </header>
-
-          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <section className="flex min-h-0 flex-col">
-              <ConversationView prompts={promptChips} onPrompt={handlePrompt} />
-              <InputBar />
-            </section>
-
-            <AnimatePresence mode="wait">
-              {currentPlan?.length ? (
-                <PlanCards key="plan-panel" />
-              ) : (
-                <ModuleWorkspace key="module-workspace" />
-              )}
-            </AnimatePresence>
-          </div>
-        </main>
+          </>
+        )}
       </div>
 
-      {/* Memory Panel */}
-      <MemoryView
-        isOpen={memoryPanelOpen}
-        onClose={() => setMemoryPanelOpen(false)}
-      />
-      <HistoryPanel
-        isOpen={historyPanelOpen}
-        onClose={() => setHistoryPanelOpen(false)}
-      />
-      <RoutinesPanel
-        isOpen={routinesPanelOpen}
-        onClose={() => setRoutinesPanelOpen(false)}
-      />
-      <SettingsPanel
-        isOpen={settingsPanelOpen}
-        onClose={() => setSettingsPanelOpen(false)}
-      />
+      {/* Slide-over panels */}
+      <MemoryView isOpen={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
+      <HistoryPanel isOpen={historyPanelOpen} onClose={() => setHistoryPanelOpen(false)} />
+      <RoutinesPanel isOpen={routinesPanelOpen} onClose={() => setRoutinesPanelOpen(false)} />
+      <RequirementsPanel isOpen={requirementsPanelOpen} onClose={() => setRequirementsPanelOpen(false)} />
+      <SettingsPanel isOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
       <Onboarding />
       <ToastStack backendOnline={backendOnline} error={error} />
-
-      <AnimatePresence>
-        {backendOnline === true && messages.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 18 }}
-            className="pointer-events-none fixed bottom-4 right-4 hidden items-center gap-2 rounded-full border border-leaf/25 bg-leaf/10 px-3 py-2 text-xs font-semibold text-leaf backdrop-blur-xl md:flex"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Ready
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

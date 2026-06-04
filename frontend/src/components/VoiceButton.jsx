@@ -89,7 +89,7 @@ export const VoiceButton = () => {
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            className="absolute bottom-[72px] left-1/2 w-max max-w-[68vw] -translate-x-1/2 rounded-2xl border border-vox-border bg-vox-s2 px-4 py-2 text-sm text-vox-text shadow-lg"
+            className="absolute bottom-[72px] left-1/2 w-max max-w-[68vw] -translate-x-1/2 rounded-lg border border-vox-border bg-vox-s2 px-4 py-2 text-sm text-vox-text shadow-lg"
             data-testid="voice-live-transcript"
           >
             <span className="flex items-center gap-2">
@@ -106,7 +106,7 @@ export const VoiceButton = () => {
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            className="absolute bottom-[72px] left-1/2 w-72 -translate-x-1/2 rounded-2xl border border-vox-cancel/30 bg-vox-cancel/10 px-4 py-2 text-center text-xs text-vox-cancel shadow-lg"
+            className="absolute bottom-[72px] left-1/2 w-72 -translate-x-1/2 rounded-lg border border-vox-cancel/30 bg-vox-cancel/10 px-4 py-2 text-center text-xs text-vox-cancel shadow-lg"
           >
             {error}
           </motion.div>
@@ -128,9 +128,9 @@ export const VoiceButton = () => {
         whileTap={{ scale: 0.92 }}
         animate={{ scale: state === "recording" ? 1.08 : 1 }}
         className={[
-          "relative grid h-14 w-14 place-items-center rounded-full outline-none transition-colors duration-300",
+          "relative grid h-12 w-12 place-items-center rounded-full outline-none transition-colors duration-300",
           state === "recording"
-            ? "bg-vox-primary text-white shadow-[0_0_40px_var(--vox-primary-glow)]"
+            ? "bg-brand text-ink-950 shadow-[0_0_40px_var(--vox-primary-glow)]"
             : "border border-vox-border bg-vox-s2 text-vox-muted hover:border-vox-primary/50 hover:text-vox-primary",
           !isSupported ? "cursor-not-allowed opacity-50" : "",
         ].join(" ")}

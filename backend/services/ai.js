@@ -336,12 +336,136 @@ function isAvailable() {
   );
 }
 
+/**
+ * Stream a response from Gemini, yielding text chunks as they arrive.
+ * Returns an async generator of text strings.
+ */
+async function* callGeminiStream(systemPrompt, userMessage, options = {}) {
+  const model = getGeminiModel();
+  const generationConfig = {
+    maxOutputTokens: options.maxTokens || 2048,
+    temperature: options.temperature ?? 0.5,
+  };
+
+  const result = await model.generateContentStream({
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig,
+  });
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+/**
+ * Stream a multi-turn conversation response from Gemini.
+ */
+async function* callGeminiMultiTurnStream(systemPrompt, messages, options = {}) {
+  const model = getGeminiModel();
+  const history = messages.slice(0, -1).map((msg) => ({
+    role: msg.role === "assistant" || msg.role === "model" ? "model" : "user",
+    parts: [{ text: msg.content }],
+  }));
+  const generationConfig = {
+    maxOutputTokens: options.maxTokens || 2048,
+    temperature: options.temperature ?? 0.5,
+  };
+
+  const chatSession = model.startChat({
+    history,
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig,
+  });
+
+  const lastMessage = messages[messages.length - 1];
+  const result = await chatSession.sendMessageStream(lastMessage.content);
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+/**
+ * Stream a chat response. Returns an async generator of text chunks.
+ * Falls back to a single-yield non-streaming call if streaming is unavailable.
+ */
+async function* chatStream(systemPrompt, userMessage, options = {}) {
+  const provider = providerOrder(options).find(
+    (p) => isProviderConfigured(p) && !isCircuitOpen(p)
+  );
+
+  if (!provider) {
+    throw new Error("No AI provider available for streaming.");
+  }
+
+  if (provider === "gemini") {
+    try {
+      for await (const chunk of callGeminiStream(systemPrompt, userMessage, options)) {
+        yield chunk;
+      }
+      recordSuccess("gemini");
+      return;
+    } catch (error) {
+      recordFailure("gemini", error);
+      // Fall through to non-streaming fallback
+    }
+  }
+
+  // Fallback: non-streaming call wrapped as single chunk
+  const text = await routeCall("single", systemPrompt, userMessage, options);
+  yield text;
+}
+
+/**
+ * Conversational multi-turn chat. Accepts an array of { role, content } messages.
+ * Supports streaming via async generator.
+ */
+async function* chatConversationalStream(systemPrompt, messages, options = {}) {
+  const provider = providerOrder(options).find(
+    (p) => isProviderConfigured(p) && !isCircuitOpen(p)
+  );
+
+  if (!provider) {
+    throw new Error("No AI provider available for conversational streaming.");
+  }
+
+  if (provider === "gemini") {
+    try {
+      for await (const chunk of callGeminiMultiTurnStream(systemPrompt, messages, options)) {
+        yield chunk;
+      }
+      recordSuccess("gemini");
+      return;
+    } catch (error) {
+      recordFailure("gemini", error);
+    }
+  }
+
+  // Fallback: non-streaming multi-turn
+  const text = await routeCall("multi", systemPrompt, messages, options);
+  yield text;
+}
+
+/**
+ * Non-streaming conversational multi-turn chat. Returns full text.
+ */
+async function chatConversational(systemPrompt, messages, options = {}) {
+  return routeCall("multi", systemPrompt, messages, options);
+}
+
 module.exports = {
   chat,
   chatMultiTurn,
   chatJSON,
   chatImage,
+  chatStream,
+  chatConversational,
+  chatConversationalStream,
   isAvailable,
   getModel: getGeminiModel,
   providerStatus,
 };
+
