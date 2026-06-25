@@ -10,6 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const ai = require("./ai");
 const { callConnector } = require("./mcp");
+const { runTerminal } = require("./terminal");
 
 // Sandboxed output directory for agent-generated files
 const OUTPUT_DIR = path.join(__dirname, "..", "agent-output");
@@ -156,6 +157,15 @@ const TOOL_DEFINITIONS = [
       connectorId: "Connector id, e.g. calendar, email, home_assistant, spotify",
       action: "Action name supported by the connector",
       params: "Parameters for the connector action",
+    },
+  },
+  {
+    name: "run_terminal",
+    description:
+      "Run a shell command in a sandboxed environment. Use for installing packages (npm install), running builds (npm run build), executing scripts, or checking versions. Commands are timeout-enforced and security-checked.",
+    parameters: {
+      command: "The shell command to execute (e.g. 'npm install express', 'node script.js')",
+      cwd: "Optional working directory (defaults to agent workspace)",
     },
   },
   {
@@ -538,6 +548,8 @@ async function executeTool(toolName, params) {
       return write_local_file(params);
     case "mcp_call":
       return callConnector(params);
+    case "run_terminal":
+      return runTerminal({ command: params.command, cwd: params.cwd || OUTPUT_DIR });
     case "think":
       return think(params);
     case "complete":

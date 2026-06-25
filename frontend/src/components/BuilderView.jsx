@@ -2,20 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
+  BookOpen,
+  Bot,
+  Brain,
+  CheckCircle2,
+  ClipboardList,
   Code2,
   Copy,
   Eye,
   Expand,
+  Layers3,
   Plus,
   RefreshCw,
+  Search,
+  Settings,
   Share2,
+  Target,
   Upload,
+  XCircle,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { VoiceButton } from "@/components/VoiceButton";
 import { analyzeContextImage } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import useTTS from "@/hooks/useTTS";
 import useElevenLabs from "@/hooks/useElevenLabs";
+import PlanCards from "@/components/PlanCards";
+import SpeakingIndicator from "@/components/SpeakingIndicator";
 
 /* ── Tips shown while generating ── */
 const generatingTips = [
@@ -36,8 +49,94 @@ const generatingTips = [
   },
 ];
 
-/* ── Message bubble ── */
-function MessageBubble({ msg }) {
+/* ── Action type styles ── */
+const actionStyles = {
+  schedule: "border-aqua/25 bg-aqua/10 text-aqua",
+  create: "border-leaf/25 bg-leaf/10 text-leaf",
+  search: "border-brand/25 bg-brand/10 text-brand",
+  remind: "border-amber/25 bg-amber/10 text-amber",
+  automate: "border-coral/25 bg-coral/10 text-coral",
+  answer: "border-aqua/25 bg-aqua/10 text-aqua",
+  control: "border-danger/25 bg-danger/10 text-danger",
+};
+
+/* ── Intent display card ── */
+function IntentDisplay({ intent }) {
+  if (!intent) return null;
+  const confidence = Number(intent.confidence || 0);
+
+  return (
+    <div className="nova-card mt-3 rounded-lg p-3">
+      <div className="mb-3 flex items-center gap-2">
+        <Target className="h-3.5 w-3.5 text-aqua" />
+        <span className="font-mono text-[11px] font-bold uppercase text-brand">
+          Detected intent
+        </span>
+      </div>
+      <div className="grid gap-2 text-xs">
+        <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+          <span className="font-semibold text-text-muted">Goal</span>
+          <span className="min-w-0 text-text-soft">{intent.goal}</span>
+        </div>
+        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
+          <span className="font-semibold text-text-muted">Action</span>
+          <span className={`w-fit rounded border px-2 py-0.5 font-mono text-[11px] font-semibold ${actionStyles[intent.action_type] || actionStyles.answer}`}>
+            {intent.action_type || "unknown"}
+          </span>
+        </div>
+        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
+          <span className="font-semibold text-text-muted">Confidence</span>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-white/[0.08]">
+              <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(confidence * 100, 100)}%` }} />
+            </div>
+            <span className="font-code text-[11px] text-text-muted">{Math.round(confidence * 100)}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Execution review card ── */
+function ExecutionReview({ review, batches = [] }) {
+  if (!review) return null;
+  const confidence = Number.isFinite(Number(review.confidence))
+    ? Math.round(Number(review.confidence) * 100)
+    : null;
+
+  return (
+    <div className="nova-card mt-3 rounded-lg p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <CheckCircle2 className="h-3.5 w-3.5 text-leaf" />
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-muted">
+          Self review
+        </span>
+        {confidence !== null && (
+          <span className="font-code text-[11px] text-text-muted">{confidence}%</span>
+        )}
+      </div>
+      <p className="text-xs leading-relaxed text-text-soft">{review.summary}</p>
+      {review.issues?.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {review.issues.slice(0, 3).map((issue) => (
+            <span key={issue} className="rounded-lg border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-medium text-amber">
+              {issue}
+            </span>
+          ))}
+        </div>
+      )}
+      {batches.length > 0 && (
+        <div className="mt-2 text-[11px] font-medium text-text-muted">
+          {batches.filter((b) => b.mode === "parallel").length} parallel batch(es)
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Message bubble (rich) ── */
+function MessageBubble({ msg, speakingId, onStopSpeaking }) {
   const isUser = msg.role === "user";
 
   if (msg.role === "system" || msg.type === "error") {
@@ -53,17 +152,52 @@ function MessageBubble({ msg }) {
     return (
       <div className="rounded-lg bg-[var(--vox-surface-2)] px-3 py-2.5">
         <p className="text-sm leading-relaxed text-text">{msg.content}</p>
+        <span className="mt-1 block text-right font-code text-[10px] text-text-muted">
+          {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
       </div>
     );
   }
 
   /* Assistant messages */
+  const iconMap = {
+    intent: <Brain className="h-3.5 w-3.5" />,
+    plan_intro: <ClipboardList className="h-3.5 w-3.5" />,
+    execution_confirmation: <CheckCircle2 className="h-3.5 w-3.5 text-leaf" />,
+    plan_cancelled: <XCircle className="h-3.5 w-3.5" />,
+    approval_required: <Bot className="h-3.5 w-3.5 text-amber" />,
+    autopilot: <Bot className="h-3.5 w-3.5 text-leaf" />,
+  };
+
+  const msgIcon = iconMap[msg.type] || (
+    <svg width="14" height="14" viewBox="0 0 32 32" fill="none">
+      <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
+      <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
+    </svg>
+  );
+
   return (
     <div className="flex items-start gap-2 px-1 py-1">
-      <span className="mt-0.5 text-aqua">
-        <svg width="14" height="14" viewBox="0 0 32 32" fill="none"><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" /><path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" /></svg>
-      </span>
-      <p className="text-sm leading-relaxed text-text-soft">{msg.content}</p>
+      <span className="mt-0.5 text-aqua">{msgIcon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-relaxed text-text-soft">{msg.content}</p>
+
+        {msg.type === "intent" && msg.intent && <IntentDisplay intent={msg.intent} />}
+
+        {msg.type === "execution_confirmation" && msg.execution?.review && (
+          <ExecutionReview review={msg.execution.review} batches={msg.execution.batches || []} />
+        )}
+
+        <span className="mt-1 block font-code text-[10px] text-text-muted">
+          {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+
+        {speakingId === msg.id && (
+          <div className="mt-1">
+            <SpeakingIndicator onStop={onStopSpeaking} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -71,10 +205,6 @@ function MessageBubble({ msg }) {
 /* ── Step indicator ── */
 function StepIndicator({ plan, loadingStage }) {
   if (!plan?.length && !loadingStage) return null;
-
-  const currentStep = plan?.find(
-    (s) => s.status !== "completed" && s.status !== "failed"
-  ) || plan?.[plan.length - 1];
 
   const stageLabels = {
     intent: "Understanding request",
@@ -84,11 +214,12 @@ function StepIndicator({ plan, loadingStage }) {
 
   return (
     <div className="flex items-center gap-2 px-3 py-1">
-      <svg width="12" height="12" viewBox="0 0 32 32" fill="none" className="text-aqua"><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" /><path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" /></svg>
+      <svg width="12" height="12" viewBox="0 0 32 32" fill="none" className="text-aqua">
+        <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
+        <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
+      </svg>
       <span className="text-xs font-medium text-aqua">
-        {loadingStage
-          ? stageLabels[loadingStage] || "Processing"
-          : currentStep?.description || "Ready"}
+        {loadingStage ? stageLabels[loadingStage] || "Processing" : "Ready"}
       </span>
     </div>
   );
@@ -118,9 +249,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             type="button"
             onClick={() => setActiveTab("preview")}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-              activeTab === "preview"
-                ? "bg-aqua/10 text-aqua"
-                : "text-text-muted hover:text-text"
+              activeTab === "preview" ? "bg-aqua/10 text-aqua" : "text-text-muted hover:text-text"
             }`}
           >
             <Eye className="h-3 w-3" />
@@ -130,9 +259,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             type="button"
             onClick={() => setActiveTab("code")}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-              activeTab === "code"
-                ? "bg-aqua/10 text-aqua"
-                : "text-text-muted hover:text-text"
+              activeTab === "code" ? "bg-aqua/10 text-aqua" : "text-text-muted hover:text-text"
             }`}
           >
             <Code2 className="h-3 w-3" />
@@ -162,13 +289,8 @@ function PreviewPanel({ previewArtifact, isLoading }) {
               /* ── Generating state ── */
               <div className="flex w-full max-w-2xl flex-col items-center px-6 py-8">
                 <p className="mb-1 text-xs text-aqua/70">NOVA is building</p>
-                <p className="mb-8 text-base font-semibold text-text">
-                  Tips while your project takes shape
-                </p>
-
-                {/* Loading preview placeholder + tip card */}
+                <p className="mb-8 text-base font-semibold text-text">Tips while your project takes shape</p>
                 <div className="flex w-full items-start gap-4">
-                  {/* Preview placeholder */}
                   <div className="flex flex-1 items-center justify-center rounded-xl border border-[rgba(255,255,255,0.06)] bg-[var(--vox-surface-1)] py-20">
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-aqua" style={{ animationDelay: "0ms" }} />
@@ -176,8 +298,6 @@ function PreviewPanel({ previewArtifact, isLoading }) {
                       <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-400" style={{ animationDelay: "300ms" }} />
                     </div>
                   </div>
-
-                  {/* Tip card */}
                   <div className="w-[240px] shrink-0 overflow-hidden rounded-xl border border-[rgba(255,255,255,0.06)]">
                     <div className={`h-28 bg-gradient-to-br ${tip.gradient} flex items-center justify-center`}>
                       <div className="flex items-center gap-2 rounded-lg bg-white/20 px-3 py-2 backdrop-blur">
@@ -191,30 +311,14 @@ function PreviewPanel({ previewArtifact, isLoading }) {
                     </div>
                     <div className="bg-[var(--vox-surface-1)] p-3">
                       <p className="text-sm font-semibold text-text">{tip.title}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-text-muted">
-                        {tip.description}
-                      </p>
-                      <button
-                        type="button"
-                        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-text-muted transition hover:text-text"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add to chat
-                      </button>
+                      <p className="mt-1 text-xs leading-relaxed text-text-muted">{tip.description}</p>
                     </div>
                   </div>
                 </div>
               </div>
             ) : hasPreview ? (
-              /* ── Live preview ── */
-              <iframe
-                src={previewUrl}
-                title="App Preview"
-                className="h-full w-full border-0"
-                sandbox="allow-scripts allow-same-origin allow-forms"
-              />
+              <iframe src={previewUrl} title="App Preview" className="h-full w-full border-0" sandbox="allow-scripts allow-same-origin allow-forms" />
             ) : (
-              /* ── Empty / completed state ── */
               <div className="flex flex-col items-center gap-3 px-6 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                   <Eye className="h-6 w-6" />
@@ -228,10 +332,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
                 {previewArtifact?.features?.length > 0 && (
                   <div className="mt-3 flex flex-wrap justify-center gap-1.5">
                     {previewArtifact.features.slice(0, 6).map((f) => (
-                      <span
-                        key={f}
-                        className="rounded-md border border-[rgba(255,255,255,0.06)] bg-[var(--vox-surface-1)] px-2 py-1 text-[11px] text-text-muted"
-                      >
+                      <span key={f} className="rounded-md border border-[rgba(255,255,255,0.06)] bg-[var(--vox-surface-1)] px-2 py-1 text-[11px] text-text-muted">
                         {f}
                       </span>
                     ))}
@@ -246,66 +347,43 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             {previewArtifact ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-text">
-                    {previewArtifact.title || "Generated Output"}
-                  </h3>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-md border border-[rgba(255,255,255,0.08)] px-2 py-1 text-[11px] text-text-muted transition hover:text-text"
-                  >
+                  <h3 className="text-sm font-semibold text-text">{previewArtifact.title || "Generated Output"}</h3>
+                  <button type="button" className="inline-flex items-center gap-1 rounded-md border border-[rgba(255,255,255,0.08)] px-2 py-1 text-[11px] text-text-muted transition hover:text-text">
                     <Copy className="h-3 w-3" />
                     Copy
                   </button>
                 </div>
-
                 {previewArtifact.stack?.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {previewArtifact.stack.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded border border-brand/20 bg-brand/8 px-2 py-0.5 text-[11px] font-medium text-brand"
-                      >
-                        {s}
-                      </span>
+                      <span key={s} className="rounded border border-brand/20 bg-brand/8 px-2 py-0.5 text-[11px] font-medium text-brand">{s}</span>
                     ))}
                   </div>
                 )}
-
                 {previewArtifact.automation?.length > 0 && (
                   <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[var(--vox-surface-1)] p-3">
-                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                      Execution steps
-                    </p>
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">Execution steps</p>
                     <div className="space-y-1.5">
                       {previewArtifact.automation.map((step, i) => (
                         <div key={step} className="flex items-center gap-2 text-xs text-text-soft">
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[var(--vox-surface-2)] font-mono text-[10px] text-text-muted">
-                            {i + 1}
-                          </span>
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[var(--vox-surface-2)] font-mono text-[10px] text-text-muted">{i + 1}</span>
                           {step}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-
                 {previewArtifact.agentSummary && (
                   <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[var(--vox-surface-1)] p-3">
-                    <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                      Agent output
-                    </p>
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-text-soft">
-                      {previewArtifact.agentSummary}
-                    </p>
+                    <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-text-muted">Agent output</p>
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-text-soft">{previewArtifact.agentSummary}</p>
                   </div>
                 )}
               </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center text-center">
                 <Code2 className="mb-3 h-8 w-8 text-text-muted" />
-                <p className="text-sm text-text-muted">
-                  Code output will appear here
-                </p>
+                <p className="text-sm text-text-muted">Code output will appear here</p>
               </div>
             )}
           </div>
@@ -318,7 +396,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
 /* ═══════════════════════════════════════════
    BuilderView — main split layout
    ═══════════════════════════════════════════ */
-export default function BuilderView({ onBack }) {
+export default function BuilderView({ onBack, onOpenPanel }) {
   const [chatText, setChatText] = useState("");
   const [contextBusy, setContextBusy] = useState(false);
   const fileInputRef = useRef(null);
@@ -347,14 +425,12 @@ export default function BuilderView({ onBack }) {
   /* Auto-scroll chat */
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, currentPlan]);
 
-  /* Timer while loading — only uses updater-style setState */
+  /* Timer while loading */
   useEffect(() => {
     if (!isLoading) return;
-    const iv = setInterval(() => {
-      setElapsedSeconds((s) => s + 1);
-    }, 1000);
+    const iv = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => {
       clearInterval(iv);
       setElapsedSeconds(0);
@@ -376,6 +452,11 @@ export default function BuilderView({ onBack }) {
   useEffect(() => {
     if (!activeTTS.isSpeaking && speakingId) setSpeakingMessageId(null);
   }, [activeTTS.isSpeaking, setSpeakingMessageId, speakingId]);
+
+  const handleStopSpeaking = () => {
+    activeTTS.stop();
+    setSpeakingMessageId(null);
+  };
 
   const send = () => {
     if (disabled || !chatText.trim()) return;
@@ -434,31 +515,41 @@ export default function BuilderView({ onBack }) {
         </button>
 
         <div className="flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 32 32" fill="none" className="text-aqua"><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" /><path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" /></svg>
-          <span className="text-sm font-semibold text-text">
-            {projectTitle}
-          </span>
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="none" className="text-aqua">
+            <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
+            <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
+          </svg>
+          <span className="text-sm font-semibold text-text">{projectTitle}</span>
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-medium text-text-muted transition hover:text-text"
-          >
+          {/* Panel access buttons (since sidebar is hidden) */}
+          {onOpenPanel && (
+            <>
+              <button type="button" onClick={() => onOpenPanel("memory")} className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="Memory">
+                <Search className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={() => onOpenPanel("history")} className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="History">
+                <BookOpen className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={() => onOpenPanel("routines")} className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="Routines">
+                <Layers3 className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={() => onOpenPanel("settings")} className="grid h-8 w-8 place-items-center rounded-lg text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="Settings">
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+              <div className="mx-1 h-5 w-px bg-[var(--vox-border)]" />
+            </>
+          )}
+          <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-medium text-text-muted transition hover:text-text">
             <RefreshCw className="h-3 w-3" />
             Fork
           </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-[var(--vox-surface-2)]"
-          >
+          <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-[var(--vox-surface-2)]">
             <Share2 className="h-3 w-3" />
             Share
           </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-aqua px-4 py-1.5 text-xs font-bold text-[#06080f] shadow-lg shadow-aqua/20 transition hover:shadow-aqua/40 hover:brightness-110"
-          >
+          <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-aqua px-4 py-1.5 text-xs font-bold text-[#06080f] shadow-lg shadow-aqua/20 transition hover:shadow-aqua/40 hover:brightness-110">
             Deploy
           </button>
         </div>
@@ -467,18 +558,17 @@ export default function BuilderView({ onBack }) {
       {/* ── Main split ── */}
       <div className="flex min-h-0 flex-1">
         {/* ── LEFT: Chat panel ── */}
-        <div className="flex w-[300px] shrink-0 flex-col border-r border-[var(--vox-border)] bg-[var(--vox-sidebar)] lg:w-[320px]">
+        <div className="flex w-[300px] shrink-0 flex-col border-r border-[var(--vox-border)] bg-[var(--vox-sidebar)] lg:w-[360px]">
           {/* Chat header */}
           <div className="flex h-10 items-center justify-between border-b border-[var(--vox-border)] px-3">
             <div className="flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 32 32" fill="none" className="text-aqua"><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" /><path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" /></svg>
+              <svg width="12" height="12" viewBox="0 0 32 32" fill="none" className="text-aqua">
+                <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
+                <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
+              </svg>
               <span className="text-xs font-semibold text-text">NOVA Agent</span>
             </div>
-            <button
-              type="button"
-              className="grid h-6 w-6 place-items-center rounded text-text-muted transition hover:bg-white/[0.06] hover:text-text"
-              title="New message"
-            >
+            <button type="button" className="grid h-6 w-6 place-items-center rounded text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="New message">
               <Plus className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -486,15 +576,30 @@ export default function BuilderView({ onBack }) {
           {/* Chat messages */}
           <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                speakingId={speakingId}
+                onStopSpeaking={handleStopSpeaking}
+              />
             ))}
 
             {isLoading && (
               <div className="flex items-center gap-2 px-1 py-1">
-                <svg width="14" height="14" viewBox="0 0 32 32" fill="none" className="text-aqua"><path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" /><path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" /></svg>
+                <svg width="14" height="14" viewBox="0 0 32 32" fill="none" className="text-aqua">
+                  <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
+                  <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
+                </svg>
                 <div className="dot-loader">
                   <span /><span /><span />
                 </div>
+              </div>
+            )}
+
+            {/* ── Plan Cards (approve/cancel) ── */}
+            {currentPlan?.length > 0 && !isLoading && (
+              <div className="mt-2">
+                <PlanCards />
               </div>
             )}
           </div>

@@ -98,7 +98,7 @@ export default function App() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {hasConversation ? (
           /* ── Builder mode ── */
-          <BuilderView onBack={handleBackToStart} />
+          <BuilderView onBack={handleBackToStart} onOpenPanel={handleOpenPanel} />
         ) : (
           /* ── Idle / Hero mode ── */
           <>

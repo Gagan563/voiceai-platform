@@ -18,10 +18,12 @@ const ttsRouter = require("./routes/tts");
 const memoriesRouter = require("./routes/memories");
 const mcpRouter = require("./routes/mcp");
 const modulesRouter = require("./routes/modules");
+const novaModulesRouter = require("./routes/nova-modules");
 const { recallMemory, extractFacts, saveMemory, ensureDefaultUser, getMemoryStatus } = require("./services/memory");
 const ai = require("./services/ai");
 const { listConnectors } = require("./services/mcp");
 const { runAgent } = require("./services/agent");
+const { orchestrate, AGENTS } = require("./services/orchestrator");
 const { OUTPUT_DIR, executeTool } = require("./services/tools");
 const {
   listRoutines,
@@ -339,6 +341,7 @@ app.use("/tts", ttsRouter);
 app.use("/memories", memoriesRouter);
 app.use("/mcp", mcpRouter);
 app.use("/modules", modulesRouter);
+app.use("/nova", novaModulesRouter);
 app.use("/api/auth", authRouter);
 
 // ── Intent Extraction (Gemini) ──
@@ -874,6 +877,53 @@ app.post("/agent/run", fileUpload.array("files", 10), async (req, res) => {
 });
 
 /**
+ * POST /orchestrate
+ * Multi-agent DAG orchestration — decomposes a complex goal into
+ * parallel specialist agents (coder, researcher, designer, tester, deployer).
+ */
+app.post("/orchestrate", async (req, res) => {
+  try {
+    const { goal, userId } = req.body;
+    if (!goal) {
+      return res.status(400).json({ error: "Missing goal", hint: 'Send a "goal" field.' });
+    }
+
+    console.log(`[Orchestrator] Starting: "${goal.substring(0, 80)}"`);
+    const io = req.app.get("io");
+
+    const result = await orchestrate(goal, {
+      userId: userId || "default-user",
+      onStep: (step) => {
+        if (io) io.emit("orchestrator:step", step);
+        const label = step.agentName
+          ? `[${step.agentIcon || "⚙️"} ${step.agentName}]`
+          : "[Orchestrator]";
+        console.log(`${label} ${step.type}: ${step.description || step.thinking || step.message || ""}`);
+      },
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("[Orchestrator] Error:", error.message);
+    res.status(500).json({ error: "Orchestration failed", details: error.message });
+  }
+});
+
+/**
+ * GET /agents
+ * List available specialist agents and their capabilities.
+ */
+app.get("/agents", (req, res) => {
+  const agents = Object.entries(AGENTS).map(([id, agent]) => ({
+    id,
+    name: agent.name,
+    icon: agent.icon,
+    tools: agent.tools,
+  }));
+  res.json({ success: true, agents });
+});
+
+/**
  * POST /upload
  * Upload files for the agent to use.
  */
@@ -950,6 +1000,22 @@ app.get("/agent/files", (req, res) => {
   res.json({ success: true, files, count: files.length });
 });
 
+// ── Socket.IO ──
+const io = initializeSocket(server);
+app.set("io", io);
+
+// ── Serve frontend in production ──
+const publicDir = path.join(__dirname, "public");
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+  // SPA fallback — serve index.html for any non-API route
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/health")) return;
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+  console.log("[Server] Serving static frontend from /public");
+}
+
 // ── 404 / Error ──
 app.use((req, res) => {
   res.status(404).json({
@@ -973,22 +1039,6 @@ app.use((err, req, res, next) => {
   console.error("[Server Error]", err.message);
   res.status(err.status || 500).json({ error: err.message || "Internal server error" });
 });
-
-// ── Socket.IO ──
-const io = initializeSocket(server);
-app.set("io", io);
-
-// ── Serve frontend in production ──
-const publicDir = path.join(__dirname, "public");
-if (fs.existsSync(publicDir)) {
-  app.use(express.static(publicDir));
-  // SPA fallback — serve index.html for any non-API route
-  app.get("*", (req, res) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/health")) return;
-    res.sendFile(path.join(publicDir, "index.html"));
-  });
-  console.log("[Server] Serving static frontend from /public");
-}
 
 // ── Start Server ──
 server.listen(PORT, () => {

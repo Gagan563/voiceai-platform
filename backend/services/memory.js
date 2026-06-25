@@ -56,6 +56,10 @@ function getPrisma() {
 }
 
 async function ensureUser(userId) {
+  if (preferLocalMemory()) {
+    ensureLocalStore();
+    return;
+  }
   const client = getPrisma();
   await client.user.upsert({
     where: { id: userId },

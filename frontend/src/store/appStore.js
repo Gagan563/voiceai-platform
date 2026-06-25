@@ -336,7 +336,7 @@ const seededSessions = initialSessions.map(normalizeSession);
 export const useAppStore = create(
   persist(
     (set, get) => ({
-      messages: seededMessages,
+      messages: [],
       currentPlan: null,
       isLoading: false,
       isRecording: false,

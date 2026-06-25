@@ -1,0 +1,11 @@
+{
+  "name": "nova-cli",
+  "version": "1.0.0",
+  "description": "NOVA — Natural Omni Voice Assistant CLI",
+  "main": "nova.js",
+  "bin": {
+    "nova": "./nova.js"
+  },
+  "keywords": ["nova", "ai", "voice", "assistant", "cli"],
+  "license": "MIT"
+}

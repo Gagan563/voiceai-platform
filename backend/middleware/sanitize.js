@@ -20,11 +20,9 @@ function sanitizeString(str) {
     clean = clean.replace(pattern, "");
   }
 
-  // Encode HTML entities for < > & " '
-  clean = clean
-    .replace(/&(?!amp;|lt;|gt;|quot;|#39;)/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  // NOTE: We intentionally do NOT HTML-entity-encode < > & here.
+  // This middleware runs on AI prompt text, and encoding would corrupt
+  // the natural language sent to intent extraction and plan generation.
 
   return clean;
 }
