@@ -19,11 +19,14 @@ apiClient.interceptors.request.use((config) => {
   try {
     const raw = localStorage.getItem("voxmind-store");
     if (raw) {
-      const settings = JSON.parse(raw)?.state?.settings;
+      const state = JSON.parse(raw)?.state;
+      const settings = state?.settings;
       const key = settings?.apiKeys?.anthropic;
       const model = settings?.selectedModel;
+      const token = state?.auth?.token;
       if (key) config.headers["x-api-key"] = key;
       if (model) config.headers["x-model"] = model;
+      if (token) config.headers["Authorization"] = `Bearer ${token}`;
     }
   } catch {
     // Persisted settings are optional.
@@ -538,4 +541,57 @@ export async function mcpCall(connectorId, action, params = {}) {
   return apiClient.post("/mcp/call", { connectorId, action, params });
 }
 
+// ── NOVA Life Modules ──
+
+export async function novaLegalAsk(question, country, language) {
+  return apiClient.post("/nova/legal/ask", { question, country, language });
+}
+
+export async function novaLegalDocument(type, details, country) {
+  return apiClient.post("/nova/legal/document", { type, details, country });
+}
+
+export async function novaFarmAdvice(params) {
+  return apiClient.post("/nova/farm/crop-advice", params);
+}
+
+export async function novaFarmPestId(description, crop, symptoms) {
+  return apiClient.post("/nova/farm/pest-identify", { description, crop, symptoms });
+}
+
+export async function novaWellnessMood(mood, note, metrics = {}) {
+  return apiClient.post("/nova/wellness/mood-checkin", { mood, note, ...metrics });
+}
+
+export async function novaWellnessBreathing() {
+  return apiClient.get("/nova/wellness/breathing");
+}
+
+export async function novaWellnessJournal(mood, topic) {
+  return apiClient.post("/nova/wellness/journal-prompt", { mood, topic });
+}
+
+export async function novaEmergencyFirstAid(condition) {
+  return apiClient.get(`/nova/emergency/first-aid${condition ? `/${condition}` : ""}`);
+}
+
+export async function novaEmergencyDisaster(type) {
+  return apiClient.get(`/nova/emergency/disaster/${type}`);
+}
+
+export async function novaEmergencyContacts() {
+  return apiClient.get("/nova/emergency/contacts");
+}
+
+// ── Multi-Agent Orchestration ──
+
+export async function orchestrate(goal) {
+  return apiClient.post("/orchestrate", { goal });
+}
+
+export async function listAgents() {
+  return apiClient.get("/agents");
+}
+
 export default apiClient;
+

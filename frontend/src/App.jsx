@@ -12,8 +12,10 @@ import SettingsPanel from "@/components/SettingsPanel";
 import RoutinesPanel from "@/components/RoutinesPanel";
 import RequirementsPanel from "@/components/RequirementsPanel";
 import ToastStack from "@/components/ToastStack";
+import NovaModules from "@/components/NovaModules";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
+import useSocket from "@/hooks/useSocket";
 import "./App.css";
 
 export default function App() {
@@ -35,6 +37,9 @@ export default function App() {
   const settings = useAppStore((s) => s.settings);
   const error = useAppStore((s) => s.error);
   const auth = useAppStore((s) => s.auth);
+
+  // Connect to Socket.IO for real-time agent/orchestrator events
+  useSocket();
 
   // Health check
   useEffect(() => {
@@ -68,7 +73,7 @@ export default function App() {
       case "settings": setSettingsPanelOpen(true); break;
       case "routines": setRoutinesPanelOpen(true); break;
       case "requirements": setRequirementsPanelOpen(true); break;
-      case "modules": setRoutinesPanelOpen(true); break;
+      case "modules": setActiveView("wellness"); break;
     }
   };
 
@@ -81,6 +86,8 @@ export default function App() {
   }
 
   const hasConversation = messages.length > 0 || isLoading;
+  const novaModules = ["wellness", "legal", "farm", "emergency"];
+  const isNovaModule = novaModules.includes(activeView);
 
   return (
     <div className="App flex h-full bg-[var(--vox-bg)] text-text">
@@ -99,6 +106,13 @@ export default function App() {
         {hasConversation ? (
           /* ── Builder mode ── */
           <BuilderView onBack={handleBackToStart} onOpenPanel={handleOpenPanel} />
+        ) : isNovaModule ? (
+          /* ── NOVA Life Module ── */
+          <NovaModules
+            activeModule={activeView}
+            onSelectModule={setActiveView}
+            onClose={() => setActiveView("playground")}
+          />
         ) : (
           /* ── Idle / Hero mode ── */
           <>

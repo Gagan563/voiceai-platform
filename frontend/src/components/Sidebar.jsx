@@ -7,11 +7,15 @@ import {
   Code2,
   ExternalLink,
   Gauge,
+  Heart,
   Key,
+  Leaf,
   Menu,
   MessageSquare,
+  Scale,
   Search,
   Settings,
+  ShieldAlert,
   X,
 } from "lucide-react";
 
@@ -28,6 +32,17 @@ const navSections = [
     items: [
       { id: "apps", label: "My Projects", icon: Code2 },
       { id: "gallery", label: "Templates", icon: BookOpen },
+    ],
+  },
+  {
+    title: "Nova Life",
+    collapsible: true,
+    accent: "leaf",
+    items: [
+      { id: "wellness", label: "Wellness", icon: Heart },
+      { id: "legal", label: "Legal Aid", icon: Scale },
+      { id: "farm", label: "Farm & Agri", icon: Leaf },
+      { id: "emergency", label: "Emergency", icon: ShieldAlert },
     ],
   },
   {
@@ -63,7 +78,7 @@ function NovaLogo({ size = 28 }) {
 }
 
 export default function Sidebar({ activeView, onNavigate, user, onOpenPanel }) {
-  const [expandedSections, setExpandedSections] = useState({ Build: true });
+  const [expandedSections, setExpandedSections] = useState({ Build: true, "Nova Life": true });
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const toggleSection = (title) => {

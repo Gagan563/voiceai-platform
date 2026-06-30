@@ -252,17 +252,86 @@
     -webkit-backdrop-filter: blur(20px);
   }
 
-  .nova-card {
-    background: linear-gradient(145deg, var(--vox-surface-1), var(--vox-surface-2));
-    border: 1px solid rgba(100, 160, 255, 0.06);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
   .nova-pill {
     border: 1px solid rgba(34, 211, 238, 0.1);
     background: linear-gradient(135deg, var(--vox-surface-1), var(--vox-surface-2));
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
+  }
+
+  .nova-card {
+    background: linear-gradient(145deg, var(--vox-surface-1), var(--vox-surface-2));
+    border: 1px solid rgba(100, 160, 255, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .nova-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--vox-text);
+    margin-bottom: 8px;
+  }
+
+  .nova-input {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(100, 160, 255, 0.08);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--vox-text);
+    transition: border-color 0.2s ease;
+    outline: none;
+  }
+
+  .nova-input:focus {
+    border-color: rgba(34, 211, 238, 0.3);
+  }
+
+  .nova-input::placeholder {
+    color: var(--vox-text-muted);
+  }
+
+  .nova-btn-primary {
+    background: linear-gradient(135deg, #22d3ee, #a78bfa);
+    color: #06080f;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .nova-btn-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .nova-btn-primary:disabled {
+    opacity: 0.5;
+    transform: none;
+  }
+
+  .nova-btn-sm {
+    background: rgba(34, 211, 238, 0.08);
+    color: var(--vox-primary);
+    border: 1px solid rgba(34, 211, 238, 0.12);
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .nova-btn-sm:hover {
+    background: rgba(34, 211, 238, 0.15);
   }
 
   .nova-glow {

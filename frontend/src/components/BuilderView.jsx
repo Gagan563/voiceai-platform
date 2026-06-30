@@ -17,11 +17,9 @@ import {
   Search,
   Settings,
   Share2,
-  Target,
   Upload,
   XCircle,
 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
 import { VoiceButton } from "@/components/VoiceButton";
 import { analyzeContextImage } from "@/api/client";
 import useAppStore from "@/store/appStore";
@@ -48,55 +46,6 @@ const generatingTips = [
     gradient: "from-emerald-600 to-cyan-500",
   },
 ];
-
-/* ── Action type styles ── */
-const actionStyles = {
-  schedule: "border-aqua/25 bg-aqua/10 text-aqua",
-  create: "border-leaf/25 bg-leaf/10 text-leaf",
-  search: "border-brand/25 bg-brand/10 text-brand",
-  remind: "border-amber/25 bg-amber/10 text-amber",
-  automate: "border-coral/25 bg-coral/10 text-coral",
-  answer: "border-aqua/25 bg-aqua/10 text-aqua",
-  control: "border-danger/25 bg-danger/10 text-danger",
-};
-
-/* ── Intent display card ── */
-function IntentDisplay({ intent }) {
-  if (!intent) return null;
-  const confidence = Number(intent.confidence || 0);
-
-  return (
-    <div className="nova-card mt-3 rounded-lg p-3">
-      <div className="mb-3 flex items-center gap-2">
-        <Target className="h-3.5 w-3.5 text-aqua" />
-        <span className="font-mono text-[11px] font-bold uppercase text-brand">
-          Detected intent
-        </span>
-      </div>
-      <div className="grid gap-2 text-xs">
-        <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
-          <span className="font-semibold text-text-muted">Goal</span>
-          <span className="min-w-0 text-text-soft">{intent.goal}</span>
-        </div>
-        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
-          <span className="font-semibold text-text-muted">Action</span>
-          <span className={`w-fit rounded border px-2 py-0.5 font-mono text-[11px] font-semibold ${actionStyles[intent.action_type] || actionStyles.answer}`}>
-            {intent.action_type || "unknown"}
-          </span>
-        </div>
-        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
-          <span className="font-semibold text-text-muted">Confidence</span>
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-white/[0.08]">
-              <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(confidence * 100, 100)}%` }} />
-            </div>
-            <span className="font-code text-[11px] text-text-muted">{Math.round(confidence * 100)}%</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ── Execution review card ── */
 function ExecutionReview({ review, batches = [] }) {
@@ -181,8 +130,6 @@ function MessageBubble({ msg, speakingId, onStopSpeaking }) {
       <span className="mt-0.5 text-aqua">{msgIcon}</span>
       <div className="min-w-0 flex-1">
         <p className="text-sm leading-relaxed text-text-soft">{msg.content}</p>
-
-        {msg.type === "intent" && msg.intent && <IntentDisplay intent={msg.intent} />}
 
         {msg.type === "execution_confirmation" && msg.execution?.review && (
           <ExecutionReview review={msg.execution.review} batches={msg.execution.batches || []} />

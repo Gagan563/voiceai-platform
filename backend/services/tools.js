@@ -27,14 +27,33 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
-function resolveOutputPath(filename) {
+/**
+ * Get the per-user output directory.
+ * Creates the directory if it doesn't exist.
+ */
+function getUserOutputDir(userId) {
+  if (!userId || userId === "default-user") return OUTPUT_DIR;
+
+  // Sanitize userId to prevent directory traversal
+  const safeId = String(userId).replace(/[^a-zA-Z0-9_@.-]/g, "_").substring(0, 64);
+  const userDir = path.join(OUTPUT_DIR, safeId);
+
+  if (!fs.existsSync(userDir)) {
+    fs.mkdirSync(userDir, { recursive: true });
+  }
+
+  return userDir;
+}
+
+function resolveOutputPath(filename, userId) {
   const cleanFilename = String(filename || "").trim();
   if (!cleanFilename) {
     throw new Error("Filename is required.");
   }
 
-  const resolved = path.resolve(OUTPUT_DIR, cleanFilename);
-  const workspace = path.resolve(OUTPUT_DIR);
+  const baseDir = getUserOutputDir(userId);
+  const resolved = path.resolve(baseDir, cleanFilename);
+  const workspace = path.resolve(baseDir);
   if (resolved !== workspace && !resolved.startsWith(workspace + path.sep)) {
     throw new Error("File path escapes the output workspace.");
   }
@@ -573,5 +592,6 @@ module.exports = {
   TOOL_DEFINITIONS,
   executeTool,
   clearWorkspace,
+  getUserOutputDir,
   OUTPUT_DIR,
 };

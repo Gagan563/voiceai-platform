@@ -128,6 +128,35 @@ const getCasualReply = (text = "") => {
   return null;
 };
 
+const approvalReplyPattern =
+  /^(do it|go ahead|run it|execute it|approve|approved|yes do it|yes run it|continue|proceed|looks good|ok go|okay go)$/i;
+
+const ambiguousFollowUpPattern =
+  /^(do it|this|that|it|yes|yeah|yep|ok|okay|go|continue|proceed)$/i;
+
+const isApprovalReply = (text = "") =>
+  approvalReplyPattern.test(text.trim().toLowerCase().replace(/[.!?'"`]+$/g, ""));
+
+const isAmbiguousFollowUp = (text = "") =>
+  ambiguousFollowUpPattern.test(text.trim().toLowerCase().replace(/[.!?'"`]+$/g, ""));
+
+const needsExecutionPreview = (intent = {}, plan = []) => {
+  const text = [
+    intent.module,
+    intent.action_type,
+    intent.goal,
+    ...plan.map((step) => `${step.service || ""} ${step.action || ""} ${step.description || ""}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/(remind|reminder|notification|calendar|schedule|answer)/.test(text)) {
+    return false;
+  }
+
+  return /(build|create.*(app|website|dashboard|platform|preview|code)|generate.*(app|website|dashboard|preview|code)|preview|code|filesystem|app|website|dashboard|deploy)/.test(text);
+};
+
 const humanAcknowledgement = (intent = {}) => {
   if (intent.spoken_response) return intent.spoken_response;
 
@@ -415,7 +444,7 @@ export const useAppStore = create(
 
       completeOnboarding: () => set({ hasOnboarded: true }),
 
-      login: ({ email, name, mode = "local" }) => {
+      login: async ({ email, name, password, mode = "local" }) => {
         const cleanEmail = (email || "").trim().toLowerCase();
         const cleanName = (name || "").trim();
         const displayName =
@@ -423,14 +452,35 @@ export const useAppStore = create(
           cleanEmail.split("@")[0]?.replace(/[._-]+/g, " ") ||
           "Owner";
 
+        // Try backend JWT auth first
+        let token = null;
+        try {
+          const response = await fetch(
+            `${import.meta.env.VITE_BACKEND_URL || "/api"}/api/auth/login`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: cleanEmail, password: password || "local", name: displayName }),
+            }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            token = data.token || null;
+            console.log("[Auth] Backend JWT acquired");
+          }
+        } catch {
+          console.warn("[Auth] Backend auth unavailable, using local-only session");
+        }
+
         set({
           auth: {
             isAuthenticated: true,
+            token,
             user: {
               id: cleanEmail || `local-${uid()}`,
               email: cleanEmail,
               name: displayName,
-              mode,
+              mode: token ? "jwt" : mode,
             },
             lastLoginAt: new Date().toISOString(),
           },
@@ -463,6 +513,7 @@ export const useAppStore = create(
         const clean = (text || "").trim();
         if (!clean || get().isLoading) return;
         const pendingClarification = get().pendingClarification;
+        const existingPlan = get().currentPlan;
         const effectiveText = pendingClarification
           ? `${pendingClarification.originalText}\n\nClarification answer: ${clean}`
           : clean;
@@ -474,6 +525,31 @@ export const useAppStore = create(
           content: clean,
           timestamp: Date.now(),
         });
+
+        if (!pendingClarification && isApprovalReply(clean) && existingPlan?.length) {
+          set((state) => ({
+            messages: [...state.messages, userMsg],
+            error: null,
+          }));
+          get().approvePlan();
+          return;
+        }
+
+        if (!pendingClarification && isAmbiguousFollowUp(clean) && !existingPlan?.length) {
+          set((state) => ({
+            messages: [...state.messages, userMsg],
+            error: null,
+          }));
+          get().addMessage({
+            role: "assistant",
+            text: "Tell me what you want me to do, or start from a specific request. I do not have a pending plan to run.",
+            content: "Tell me what you want me to do, or start from a specific request. I do not have a pending plan to run.",
+            type: "chat",
+            timestamp: Date.now(),
+          });
+          get()._snapshotSession();
+          return;
+        }
 
         set((state) => ({
           messages: [...state.messages, userMsg],
@@ -600,12 +676,14 @@ export const useAppStore = create(
           set({
             currentPlan: plan,
             activeModule: intent.module,
-            previewArtifact: createPreviewArtifact({
-              intent,
-              sourceText: clean,
-              plan,
-              status: "planned",
-            }),
+            previewArtifact: needsExecutionPreview(intent, plan)
+              ? createPreviewArtifact({
+                  intent,
+                  sourceText: clean,
+                  plan,
+                  status: "planned",
+                })
+              : null,
             isLoading: false,
             loadingStage: null,
           });

@@ -31,7 +31,7 @@ export default function LoginPage() {
     return cleanEmail.includes("@") && password.trim().length >= 4;
   }, [email, password]);
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
 
     if (!canSubmit) {
@@ -39,11 +39,16 @@ export default function LoginPage() {
       return;
     }
 
-    login({
-      email,
-      name: name || role,
-      mode: "local-password",
-    });
+    try {
+      await login({
+        email,
+        password,
+        name: name || role,
+        mode: "local-password",
+      });
+    } catch (err) {
+      setError(err.message || "Login failed");
+    }
   };
 
   const continueDemo = () => {

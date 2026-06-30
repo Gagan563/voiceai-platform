@@ -26,8 +26,31 @@ function initializeSocket(httpServer) {
     path: process.env.SOCKET_PATH || "/socket.io",
   });
 
+  // ── WebSocket auth middleware ──
+  const { verifyToken } = require("./middleware/auth");
+  io.use((socket, next) => {
+    const secret = process.env.JWT_SECRET;
+    // Skip auth in dev mode if no JWT_SECRET is set
+    if (!secret || secret === "change-this-to-a-random-64-char-string-in-production") {
+      socket.user = { id: "dev-user", email: "dev@local", role: "admin" };
+      return next();
+    }
+
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      return next(new Error("Authentication required — send token via auth.token"));
+    }
+
+    try {
+      socket.user = verifyToken(token, secret);
+      next();
+    } catch (err) {
+      next(new Error(`Auth failed: ${err.message}`));
+    }
+  });
+
   io.on("connection", (socket) => {
-    console.log(`[Socket.IO] Client connected: ${socket.id}`);
+    console.log(`[Socket.IO] Client connected: ${socket.id} (user: ${socket.user?.email || "unknown"})`);
 
     // ── Intent Extraction ──
     socket.on("stream:intent", async (data) => {
