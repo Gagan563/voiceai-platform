@@ -64,6 +64,10 @@ function confidenceNumber(value, fallback = 0.72) {
   return Math.max(0, Math.min(1, number));
 }
 
+function stringValue(value, fallback) {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 function buildClarifyingQuestion(intent = {}) {
   const missing = Array.isArray(intent.missing_info) ? intent.missing_info.filter(Boolean) : [];
   if (missing.length > 0) {
@@ -121,11 +125,11 @@ function enrichPlanSteps(plan = [], intent = {}) {
     return {
       ...step,
       step: Number(step.step) || index + 1,
-      action: step.action || step.action_type || "general",
-      service: step.service || "ai",
+      action: stringValue(step.action, stringValue(step.action_type, "general")),
+      service: stringValue(step.service, "ai"),
       requires_input: requiresInput,
       estimated_duration_seconds: Number(step.estimated_duration_seconds) || 2 + index,
-      fallback: step.fallback || "Ask for confirmation and retry this step",
+      fallback: stringValue(step.fallback, "Ask for confirmation and retry this step"),
       confidence,
       parallel_group: step.parallel_group || null,
     };
@@ -569,5 +573,6 @@ router._extractIntentForText = extractIntentForText;
 router._generatePlanForIntent = generatePlanForIntent;
 router._executePlanBatches = executePlanBatches;
 router._reviewExecution = reviewExecution;
+router._enrichPlanSteps = enrichPlanSteps;
 
 module.exports = router;
