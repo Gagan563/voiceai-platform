@@ -3,6 +3,7 @@
 // ============================================
 
 const express = require("express");
+const config = require("../config");
 const router = express.Router();
 
 /**
@@ -22,11 +23,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    const defaultVoiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // "Rachel" default
-    const selectedVoice = voiceId || defaultVoiceId;
+    if (voiceId !== undefined && typeof voiceId !== "string") {
+      return res.status(400).json({ error: "'voiceId' must be a string" });
+    }
 
-    if (!apiKey || apiKey === "your-elevenlabs-api-key-here") {
+    const apiKey = config.ELEVENLABS_API_KEY;
+    const selectedVoice = (voiceId || config.ELEVENLABS_VOICE_ID || "").trim();
+
+    if (!selectedVoice) {
+      return res.status(400).json({ error: "Missing ElevenLabs voice id" });
+    }
+
+    if (!config.isElevenLabsConfigured()) {
       return res.status(503).json({
         error: "ElevenLabs API key not configured",
         hint: "Set ELEVENLABS_API_KEY in your backend .env file. Get a free key at https://elevenlabs.io",
@@ -36,7 +44,7 @@ router.post("/", async (req, res) => {
     console.log(`[TTS] Synthesizing ${text.length} chars with voice ${selectedVoice}`);
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(selectedVoice)}`,
       {
         method: "POST",
         headers: {
@@ -45,7 +53,7 @@ router.post("/", async (req, res) => {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_monolingual_v1",
+          model_id: config.ELEVENLABS_MODEL,
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,

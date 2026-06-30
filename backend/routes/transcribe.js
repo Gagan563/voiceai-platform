@@ -4,13 +4,14 @@
 
 const express = require("express");
 const multer = require("multer");
+const config = require("../config");
 
 const router = express.Router();
 
 // Multer config for audio file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max
+  limits: { fileSize: config.FILE_SIZE_LIMITS.audio },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
       "audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg",
@@ -44,10 +45,10 @@ router.post("/", upload.single("audio"), async (req, res) => {
     const { originalname, size, mimetype, buffer } = req.file;
     console.log(`[Transcribe] Received: ${originalname} (${(size / 1024).toFixed(1)} KB, ${mimetype})`);
 
-    const openaiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = config.OPENAI_API_KEY;
 
     // ── If OpenAI key is set, use Whisper API ──
-    if (openaiKey && openaiKey !== "sk-xxxxx-your-openai-key-here") {
+    if (config.isOpenAIConfigured() && openaiKey) {
       console.log("[Transcribe] Using OpenAI Whisper API");
 
       // Build FormData for the Whisper API
@@ -100,12 +101,12 @@ router.post("/", upload.single("audio"), async (req, res) => {
       });
     }
 
-    if (process.env.ALLOW_STUB_TRANSCRIPTION === "true") {
+    if (config.ALLOW_STUB_TRANSCRIPTION) {
       console.log("[Transcribe] Demo transcription enabled");
 
       return res.json({
         success: true,
-        transcript: "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget",
+        transcript: config.DEMO_TRANSCRIPT,
         engine: "demo",
         confidence: 0.94,
         language: "en",

@@ -2,7 +2,7 @@
 // VoiceAI Platform — Express Server (Gemini-Powered)
 // ============================================
 
-require("dotenv").config();
+const config = require("./config");
 
 const express = require("express");
 const cors = require("cors");
@@ -11,7 +11,7 @@ const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { initializeSocket } = require("./socket");
+const { emitToUser, initializeSocket } = require("./socket");
 const transcribeRouter = require("./routes/transcribe");
 const ttsRouter = require("./routes/tts");
 const memoriesRouter = require("./routes/memories");
@@ -24,7 +24,7 @@ const ai = require("./services/ai");
 const { listConnectors } = require("./services/mcp");
 const { runAgent } = require("./services/agent");
 const { orchestrate, AGENTS } = require("./services/orchestrator");
-const { OUTPUT_DIR } = require("./services/tools");
+const { getUserOutputDir } = require("./services/tools");
 const {
   listRoutines,
   createRoutine,
@@ -47,15 +47,12 @@ const authRouter = require("./routes/auth");
 validateEnv();
 
 // ── Config ──
-const PORT = process.env.PORT || 3001;
+const PORT = config.PORT;
 const app = express();
 const server = http.createServer(app);
 
 // ── Middleware ──
-const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
-  .split(",")
-  .map((o) => o.trim());
-app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(cors({ origin: config.CORS_ORIGINS, credentials: true }));
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -65,7 +62,7 @@ app.use(authMiddleware);
 // Multer for audio uploads
 const audioUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: config.FILE_SIZE_LIMITS.audio },
 });
 
 // Multer for file uploads to the agent
@@ -80,12 +77,12 @@ const fileUpload = multer({
       cb(null, unique + "-" + file.originalname);
     },
   }),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: config.FILE_SIZE_LIMITS.agentFile },
 });
 
 const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: config.FILE_SIZE_LIMITS.image },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype?.startsWith("image/")) {
       cb(new Error("Only image files are supported."), false);
@@ -103,15 +100,24 @@ app.use((req, res, next) => {
 
 // ── Routine workflow (used by routines run + scheduler) ──
 
-async function runRoutineWorkflow(routine, userId = "default-user") {
+async function runRoutineWorkflow(routine, userId = config.DEFAULT_USER_ID) {
   const extractIntentForText = chatRouter._extractIntentForText;
   const generatePlanForIntent = chatRouter._generatePlanForIntent;
   const executePlanBatches = chatRouter._executePlanBatches;
   const reviewExecution = chatRouter._reviewExecution;
+  const prompt = typeof routine.prompt === "string"
+    ? routine.prompt.trim()
+    : typeof routine.name === "string"
+      ? routine.name.trim()
+      : "";
 
-  const intent = await extractIntentForText(routine.prompt || routine.name, userId);
+  if (!prompt) {
+    throw new Error("Routine prompt is required.");
+  }
+
+  const intent = await extractIntentForText(prompt, userId);
   const plan = await generatePlanForIntent(intent);
-  const execution = await executePlanBatches(plan);
+  const execution = await executePlanBatches(plan, userId);
   const review = await reviewExecution({ plan, results: execution.results });
 
   return {
@@ -127,8 +133,8 @@ async function runRoutineWorkflow(routine, userId = "default-user") {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    service: "nova-voiceai",
-    version: "2.0.0",
+    service: config.APP_NAME,
+    version: config.APP_VERSION,
     ai_engine: ai.isAvailable() ? "gemini" : "mock",
     ai_router: ai.providerStatus ? ai.providerStatus() : undefined,
     memory: getMemoryStatus ? getMemoryStatus() : undefined,
@@ -141,10 +147,10 @@ app.get("/status", (req, res) => {
   const aiRouter = ai.providerStatus ? ai.providerStatus() : {};
   const connectors = listConnectors();
   const requiredKeys = {
-    whisper: Boolean(process.env.OPENAI_API_KEY),
-    gemini: Boolean(process.env.GEMINI_API_KEY),
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
+    whisper: config.isOpenAIConfigured(),
+    gemini: Boolean(config.GEMINI_API_KEY),
+    anthropic: Boolean(config.ANTHROPIC_API_KEY),
+    elevenlabs: config.isElevenLabsConfigured(),
   };
 
   res.json({
@@ -164,8 +170,8 @@ app.get("/status", (req, res) => {
     keys: requiredKeys,
     ai_router: aiRouter,
     demo: {
-      connectors: process.env.CONNECTOR_DEMO_MODE !== "false",
-      transcription: process.env.ALLOW_STUB_TRANSCRIPTION === "true",
+      connectors: config.CONNECTOR_DEMO_MODE,
+      transcription: config.ALLOW_STUB_TRANSCRIPTION,
     },
   });
 });
@@ -180,7 +186,7 @@ app.use("/nova", aiLimiter, novaModulesRouter);
 app.use("/api/auth", authLimiter, authRouter);
 
 // Chat / Intent / Plan / Execute / Stream (extracted)
-app.use("/", aiLimiter, chatRouter);
+app.use("/", chatRouter);
 
 // ── Routine automation ──
 app.get("/routines", (req, res) => {
@@ -217,7 +223,7 @@ app.post("/routines/:id/run", async (req, res) => {
   if (!routine) return res.status(404).json({ error: "Routine not found" });
 
   try {
-    const result = await runRoutineWorkflow(routine, req.body?.userId || "default-user");
+    const result = await runRoutineWorkflow(routine, req.user.id);
     const updated = recordRoutineRun(routine.id, result);
     res.json({ success: true, routine: updated, result });
   } catch (error) {
@@ -231,11 +237,11 @@ app.post("/routines/:id/run", async (req, res) => {
 
 // ── Local reminders ──
 app.get("/reminders", (req, res) => {
-  res.json({ success: true, reminders: listReminders() });
+  res.json({ success: true, reminders: listReminders(req.user.id) });
 });
 
 app.patch("/reminders/:id", (req, res) => {
-  const reminder = updateReminder(req.params.id, req.body || {});
+  const reminder = updateReminder(req.params.id, req.body || {}, req.user.id);
   if (!reminder) return res.status(404).json({ error: "Reminder not found" });
   res.json({ success: true, reminder });
 });
@@ -246,9 +252,16 @@ app.post("/context/image", imageUpload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "Upload an image file in the 'image' field." });
   }
 
-  const prompt =
-    req.body?.prompt ||
-    "Describe the useful information in this image for a voice-first assistant.";
+  let prompt = "Describe the useful information in this image for a voice-first assistant.";
+  if (req.body?.prompt !== undefined) {
+    if (typeof req.body.prompt !== "string") {
+      return res.status(400).json({ error: "Prompt must be a string." });
+    }
+    prompt = req.body.prompt.trim();
+    if (!prompt) {
+      return res.status(400).json({ error: "Prompt cannot be empty." });
+    }
+  }
 
   try {
     if (!ai.chatImage) throw new Error("Vision route is unavailable.");
@@ -296,7 +309,7 @@ Do not claim certainty for unclear details.`,
  */
 app.post("/agent/run", agentLimiter, fileUpload.array("files", 10), async (req, res) => {
   try {
-    const { input, userId } = req.body;
+    const { input } = req.body;
 
     if (!input || typeof input !== "string") {
       return res.status(400).json({
@@ -306,9 +319,9 @@ app.post("/agent/run", agentLimiter, fileUpload.array("files", 10), async (req, 
     }
 
     const files = (req.files || []).map((f) => f.filename);
-    const currentUserId = userId || "default-user";
+    const userId = req.user.id;
 
-    console.log(`[Agent] Starting: "${input.substring(0, 80)}" (${files.length} files)`);
+    console.log(`[Agent] Starting (${files.length} files)`);
 
     // Get the Socket.IO instance to stream progress
     const io = req.app.get("io");
@@ -316,12 +329,9 @@ app.post("/agent/run", agentLimiter, fileUpload.array("files", 10), async (req, 
     const result = await runAgent({
       input,
       files,
-      userId: currentUserId,
+      userId,
       onStep: (step) => {
-        // Stream to all connected clients
-        if (io) {
-          io.emit("agent:step", step);
-        }
+        emitToUser(io, userId, "agent:step", step);
         console.log(`[Agent] ${step.type}: ${step.message || step.tool || ""}`);
       },
     });
@@ -343,18 +353,19 @@ app.post("/agent/run", agentLimiter, fileUpload.array("files", 10), async (req, 
  */
 app.post("/orchestrate", agentLimiter, async (req, res) => {
   try {
-    const { goal, userId } = req.body;
+    const { goal } = req.body;
     if (!goal) {
       return res.status(400).json({ error: "Missing goal", hint: 'Send a "goal" field.' });
     }
 
-    console.log(`[Orchestrator] Starting: "${goal.substring(0, 80)}"`);
+    const userId = req.user.id;
+    console.log("[Orchestrator] Starting");
     const io = req.app.get("io");
 
     const result = await orchestrate(goal, {
-      userId: userId || "default-user",
+      userId,
       onStep: (step) => {
-        if (io) io.emit("orchestrator:step", step);
+        emitToUser(io, userId, "orchestrator:step", step);
         const label = step.agentName
           ? `[${step.agentIcon || "⚙️"} ${step.agentName}]`
           : "[Orchestrator]";
@@ -405,11 +416,12 @@ app.post("/upload", fileUpload.array("files", 10), (req, res) => {
 app.get("/agent/output/*", (req, res) => {
   // Extract the path after /agent/output/
   const requestedPath = req.params[0];
-  const filePath = path.join(OUTPUT_DIR, requestedPath);
+  const outputDir = getUserOutputDir(req.user.id);
+  const filePath = path.join(outputDir, requestedPath);
 
   // Security: prevent directory traversal
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(OUTPUT_DIR))) {
+  if (!resolved.startsWith(path.resolve(outputDir))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -456,7 +468,7 @@ app.get("/agent/files", (req, res) => {
     return entries;
   }
 
-  const files = walk(OUTPUT_DIR);
+  const files = walk(getUserOutputDir(req.user.id));
   res.json({ success: true, files, count: files.length });
 });
 
@@ -483,7 +495,7 @@ app.use((req, res) => {
     path: req.path,
     available_endpoints: [
       "GET  /health",
-      "GET  /chat/stream?text=...",
+      "POST /chat/stream",
       "POST /intent",
       "POST /plan",
       "POST /execute",
@@ -492,7 +504,7 @@ app.use((req, res) => {
       "POST /upload",
       "GET  /agent/output/:file",
       "GET  /agent/files",
-      "GET  /memories/:userId",
+      "GET  /memories",
     ],
   });
 });
@@ -516,7 +528,7 @@ server.listen(PORT, () => {
   console.log("║  GET  /agent/output — Preview files          ║");
   console.log("║  POST /intent       — Intent extraction      ║");
   console.log("║  POST /plan         — Plan generation        ║");
-  console.log("║  GET  /chat/stream  — SSE streaming          ║");
+  console.log("║  POST /chat/stream  — SSE streaming          ║");
   console.log("╚══════════════════════════════════════════════╝");
   console.log("");
 
@@ -526,7 +538,7 @@ server.listen(PORT, () => {
 
   startRoutineScheduler(async (routine) => {
     console.log(`[Routine] Running scheduled routine: ${routine.name}`);
-    return runRoutineWorkflow(routine, "default-user");
+    return runRoutineWorkflow(routine, config.DEFAULT_USER_ID);
   });
   console.log("[Routine] Scheduler ready");
 });

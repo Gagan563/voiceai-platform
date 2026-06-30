@@ -7,6 +7,7 @@ import {
   extractIntent,
   generatePlan,
   getAgentOutputUrl,
+  setRuntimeAuthToken,
 } from "@/api/client";
 import {
   initialMemories,
@@ -75,6 +76,11 @@ const normalizePlan = (response) => {
 
 const getErrorMessage = (error, fallback) =>
   error?.hint ? `${error.message} ${error.hint}` : error?.message || fallback;
+
+const getAuthBaseUrl = () => {
+  const base = import.meta.env.VITE_BACKEND_URL || "/api";
+  return base.endsWith("/api") ? base : `${base.replace(/\/$/, "")}/api`;
+};
 
 const codingApprovalPattern =
   /\b(code|coding|developer|filesystem|file|files|write_file|modify_file|local_file|terminal|command|shell|git|github|deploy|deployment|build|app|website|dashboard|preview|package|install|npm|test|lint|server|database migration)\b/i;
@@ -445,6 +451,7 @@ export const useAppStore = create(
       completeOnboarding: () => set({ hasOnboarded: true }),
 
       login: async ({ email, name, password, mode = "local" }) => {
+        setRuntimeAuthToken(null);
         const cleanEmail = (email || "").trim().toLowerCase();
         const cleanName = (name || "").trim();
         const displayName =
@@ -456,7 +463,7 @@ export const useAppStore = create(
         let token = null;
         try {
           const response = await fetch(
-            `${import.meta.env.VITE_BACKEND_URL || "/api"}/api/auth/login`,
+            `${getAuthBaseUrl()}/auth/login`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -466,6 +473,7 @@ export const useAppStore = create(
           if (response.ok) {
             const data = await response.json();
             token = data.token || null;
+            setRuntimeAuthToken(token);
             console.log("[Auth] Backend JWT acquired");
           }
         } catch {
@@ -487,7 +495,8 @@ export const useAppStore = create(
         });
       },
 
-      logout: () =>
+      logout: () => {
+        setRuntimeAuthToken(null);
         set({
           auth: defaultAuth,
           currentPlan: null,
@@ -496,7 +505,8 @@ export const useAppStore = create(
           isLoading: false,
           loadingStage: null,
           error: null,
-        }),
+        });
+      },
 
       addMessage: (roleOrMessage, content, meta = {}) => {
         const message =
@@ -759,6 +769,7 @@ export const useAppStore = create(
           const reviewSummary = result.review?.summary ? ` Review: ${result.review.summary}` : "";
           const message = `${result.message || "Done. I finished it."}${reviewSummary}`;
           const intent = get().lastIntent;
+          const shouldShowPreview = needsExecutionPreview(intent, fullPlan || plan);
           const sourceText =
             get().messages.findLast?.((message) => message.role === "user")?.content ||
             get().messages.filter((message) => message.role === "user").at(-1)?.content ||
@@ -797,13 +808,15 @@ export const useAppStore = create(
               ...get().moduleRecords,
               [module]: [record, ...(get().moduleRecords[module] || [])].slice(0, 20),
             },
-            previewArtifact: createPreviewArtifact({
-              intent,
-              sourceText,
-              plan,
-              status: "ready",
-              execution: result,
-            }),
+            previewArtifact: shouldShowPreview
+              ? createPreviewArtifact({
+                  intent,
+                  sourceText,
+                  plan,
+                  status: "ready",
+                  execution: result,
+                })
+              : null,
             isLoading: false,
             loadingStage: null,
             planApproved: true,
@@ -919,9 +932,9 @@ export const useAppStore = create(
 
       exitSessionView: () => set({ viewingSessionId: null }),
 
-      deleteMemory: async (id, userId = "default-user") => {
+      deleteMemory: async (id) => {
         try {
-          await apiDeleteMemory(userId, id);
+          await apiDeleteMemory(id);
         } catch {
           // Mock and offline deletion still update local state.
         }
@@ -972,7 +985,10 @@ export const useAppStore = create(
         memories: state.memories,
         sessions: state.sessions,
         hasOnboarded: state.hasOnboarded,
-        auth: state.auth,
+        auth: {
+          ...state.auth,
+          token: null,
+        },
         darkMode: state.darkMode,
         currentSessionId: state.currentSessionId,
         activeModule: state.activeModule,
@@ -998,6 +1014,7 @@ export const useAppStore = create(
           auth: {
             ...defaultAuth,
             ...(state.auth || {}),
+            token: null,
             user: state.auth?.user || null,
           },
           activeModule: state.activeModule || "chat",

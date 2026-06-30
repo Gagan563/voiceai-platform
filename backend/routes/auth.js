@@ -3,9 +3,17 @@
  */
 const express = require("express");
 const crypto = require("crypto");
-const { signToken } = require("../middleware/auth");
+const { requireJwtSecret, signToken } = require("../middleware/auth");
+const config = require("../config");
 
 const router = express.Router();
+
+function cleanCredentials(body = {}) {
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  return { email, password, name };
+}
 
 /**
  * POST /api/auth/login
@@ -15,55 +23,61 @@ const router = express.Router();
  * In production: validates against DB (Prisma User model).
  */
 router.post("/login", (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, name } = cleanCredentials(req.body);
+  const secret = requireJwtSecret(res);
+  if (!secret) return;
 
   if (!email) {
-    return res.status(400).json({ error: "Email is required" });
+    return res.status(400).json({ error: "Email must be a string" });
   }
 
   // Dev mode: accept any login
-  if (process.env.NODE_ENV !== "production") {
+  if (!config.isProduction()) {
+    const devId = `dev-${crypto.createHash("sha256").update(email).digest("hex").slice(0, 12)}`;
     const token = signToken(
-      { id: "dev-user", email, role: "admin" },
-      process.env.JWT_SECRET || "dev-secret"
+      { id: devId, email, role: "admin" },
+      secret
     );
     return res.json({
       token,
-      user: { id: "dev-user", email, name: email.split("@")[0], role: "admin" },
+      user: { id: devId, email, name: name || email.split("@")[0], role: "admin" },
     });
   }
 
   // Production: validate credentials
-  // TODO: Integrate with Prisma User model
+  // TODO: Integrate with Prisma User model for full credential validation
   if (!password) {
-    return res.status(400).json({ error: "Password is required" });
+    return res.status(400).json({ error: "Password must be a string" });
   }
 
-  // Hash comparison would go here
+  // Hash comparison placeholder — replace with bcrypt + DB lookup in production
   const hashedInput = crypto.createHash("sha256").update(password).digest("hex");
-  void hashedInput; // Placeholder for DB lookup
+  void hashedInput;
 
-  return res.status(501).json({ error: "Production auth not yet configured. Set up Prisma User model." });
+  return res.status(501).json({ error: "Production auth not yet configured. Set up Prisma User model and password hashing." });
 });
 
 /**
  * POST /api/auth/register
  */
 router.post("/register", (req, res) => {
-  const { email, name, password } = req.body;
+  const { email, name, password } = cleanCredentials(req.body);
+  const secret = requireJwtSecret(res);
+  if (!secret) return;
 
   if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
+    return res.status(400).json({ error: "Email and password must be strings" });
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!config.isProduction()) {
+    const id = `user-${Date.now()}`;
     const token = signToken(
-      { id: `user-${Date.now()}`, email, role: "user" },
-      process.env.JWT_SECRET || "dev-secret"
+      { id, email, role: "user" },
+      secret
     );
     return res.json({
       token,
-      user: { id: `user-${Date.now()}`, email, name: name || email.split("@")[0], role: "user" },
+      user: { id, email, name: name || email.split("@")[0], role: "user" },
     });
   }
 

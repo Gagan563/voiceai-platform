@@ -6,9 +6,10 @@
 // chat(), chatMultiTurn(), chatJSON(), isAvailable(), and getModel().
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const config = require("../config");
 
-const CIRCUIT_FAILURE_LIMIT = Number(process.env.AI_CIRCUIT_FAILURE_LIMIT || 3);
-const CIRCUIT_RESET_MS = Number(process.env.AI_CIRCUIT_RESET_MS || 60_000);
+const CIRCUIT_FAILURE_LIMIT = config.AI_CIRCUIT_FAILURE_LIMIT;
+const CIRCUIT_RESET_MS = config.AI_CIRCUIT_RESET_MS;
 
 const breakers = new Map();
 let geminiClient = null;
@@ -69,10 +70,10 @@ function providerStatus() {
 
 function isProviderConfigured(provider) {
   if (provider === "gemini") {
-    return Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 10);
+    return Boolean(config.GEMINI_API_KEY && config.GEMINI_API_KEY.length > 10);
   }
   if (provider === "anthropic") {
-    return Boolean(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 10);
+    return Boolean(config.ANTHROPIC_API_KEY && config.ANTHROPIC_API_KEY.length > 10);
   }
   return false;
 }
@@ -80,7 +81,7 @@ function isProviderConfigured(provider) {
 function providerOrder(options = {}) {
   if (options.provider) return [options.provider];
 
-  const mode = process.env.AI_ROUTER_MODE || "hybrid";
+  const mode = config.AI_ROUTER_MODE;
   if (mode === "gemini") return ["gemini", "anthropic"];
   if (mode === "anthropic") return ["anthropic", "gemini"];
 
@@ -92,14 +93,14 @@ function providerOrder(options = {}) {
 function getGeminiModel() {
   if (geminiModel) return geminiModel;
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = config.GEMINI_API_KEY;
   if (!apiKey || apiKey.length < 10) {
     throw new Error("GEMINI_API_KEY not configured in .env");
   }
 
   geminiClient = new GoogleGenerativeAI(apiKey);
   geminiModel = geminiClient.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    model: config.GEMINI_MODEL,
   });
   return geminiModel;
 }
@@ -107,7 +108,7 @@ function getGeminiModel() {
 async function callGemini(systemPrompt, userMessage, options = {}) {
   const model = getGeminiModel();
   const generationConfig = {
-    maxOutputTokens: options.maxTokens || 4096,
+    maxOutputTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.chat,
     temperature: options.temperature ?? 0.7,
   };
 
@@ -127,7 +128,7 @@ async function callGemini(systemPrompt, userMessage, options = {}) {
 async function callGeminiImage(systemPrompt, image, prompt, options = {}) {
   const model = getGeminiModel();
   const generationConfig = {
-    maxOutputTokens: options.maxTokens || 2048,
+    maxOutputTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.stream,
     temperature: options.temperature ?? 0.3,
   };
 
@@ -164,7 +165,7 @@ async function callGeminiMultiTurn(systemPrompt, messages, options = {}) {
     parts: [{ text: msg.content }],
   }));
   const generationConfig = {
-    maxOutputTokens: options.maxTokens || 8192,
+    maxOutputTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.multiTurn,
     temperature: options.temperature ?? 0.7,
   };
 
@@ -180,7 +181,7 @@ async function callGeminiMultiTurn(systemPrompt, messages, options = {}) {
 }
 
 async function callAnthropic(systemPrompt, userMessage, options = {}) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = config.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.length < 10) {
     throw new Error("ANTHROPIC_API_KEY not configured in .env");
   }
@@ -190,11 +191,11 @@ async function callAnthropic(systemPrompt, userMessage, options = {}) {
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "anthropic-version": config.ANTHROPIC_API_VERSION,
     },
     body: JSON.stringify({
-      model: options.model || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-      max_tokens: options.maxTokens || 4096,
+      model: options.model || config.ANTHROPIC_MODEL,
+      max_tokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.chat,
       temperature: options.temperature ?? 0.7,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
@@ -214,7 +215,7 @@ async function callAnthropic(systemPrompt, userMessage, options = {}) {
 }
 
 async function callAnthropicMultiTurn(systemPrompt, messages, options = {}) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = config.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.length < 10) {
     throw new Error("ANTHROPIC_API_KEY not configured in .env");
   }
@@ -224,11 +225,11 @@ async function callAnthropicMultiTurn(systemPrompt, messages, options = {}) {
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "anthropic-version": config.ANTHROPIC_API_VERSION,
     },
     body: JSON.stringify({
-      model: options.model || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-      max_tokens: options.maxTokens || 8192,
+      model: options.model || config.ANTHROPIC_MODEL,
+      max_tokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.multiTurn,
       temperature: options.temperature ?? 0.7,
       system: systemPrompt,
       messages: messages.map((msg) => ({

@@ -2,10 +2,11 @@
 // VoiceAI Platform — SSE Streaming Hook
 // ============================================
 //
-// Connects to GET /chat/stream via Server-Sent Events
+// Connects to POST /chat/stream via Server-Sent Events
 // and returns tokens as they arrive from the AI.
 
 import { useCallback, useRef, useState } from "react";
+import { getStreamingHeaders } from "@/api/client";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 
@@ -38,19 +39,15 @@ export default function useStreaming() {
    * @param {function} options.onChunk — called with each text chunk
    * @param {function} options.onDone — called when streaming completes with full text
    * @param {function} options.onError — called on error
-   * @param {string} options.userId
    * @returns {Promise<string>} — the full assembled response
    */
-  const streamChat = useCallback(async (text, { onChunk, onDone, onError, userId } = {}) => {
+  const streamChat = useCallback(async (text, { onChunk, onDone, onError } = {}) => {
     abort(); // Cancel any in-flight stream
 
     const controller = new AbortController();
     controllerRef.current = controller;
 
-    const params = new URLSearchParams({ text });
-    if (userId) params.set("userId", userId);
-
-    const url = `${BASE_URL}/chat/stream?${params.toString()}`;
+    const url = `${BASE_URL}/chat/stream`;
 
     setIsStreaming(true);
     setStreamedText("");
@@ -59,8 +56,10 @@ export default function useStreaming() {
 
     try {
       const response = await fetch(url, {
+        method: "POST",
         signal: controller.signal,
-        headers: { Accept: "text/event-stream" },
+        headers: getStreamingHeaders(),
+        body: JSON.stringify({ text }),
       });
 
       if (!response.ok) {
@@ -84,27 +83,28 @@ export default function useStreaming() {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
 
+          let data;
           try {
-            const data = JSON.parse(line.slice(6));
+            data = JSON.parse(line.slice(6));
+          } catch {
+            // Skip malformed SSE lines without hiding valid server error events.
+            continue;
+          }
 
-            if (data.type === "chunk" && data.text) {
-              fullText += data.text;
-              setStreamedText(fullText);
-              onChunk?.(data.text, fullText);
-            }
+          if (data.type === "chunk" && data.text) {
+            fullText += data.text;
+            setStreamedText(fullText);
+            onChunk?.(data.text, fullText);
+          }
 
-            if (data.type === "done") {
-              setIsStreaming(false);
-              onDone?.(fullText);
-              return fullText;
-            }
+          if (data.type === "done") {
+            setIsStreaming(false);
+            onDone?.(fullText);
+            return fullText;
+          }
 
-            if (data.type === "error") {
-              throw new Error(data.message || "Stream error");
-            }
-          } catch (parseErr) {
-            if (parseErr.message?.includes("Stream error")) throw parseErr;
-            // Skip malformed SSE lines
+          if (data.type === "error") {
+            throw new Error(data.message || "Stream error");
           }
         }
       }
@@ -120,7 +120,7 @@ export default function useStreaming() {
         return fullText;
       }
 
-      console.error("[useStreaming] Error:", err.message);
+      console.error("[useStreaming] Error:", err instanceof Error ? err.message : "Stream failed");
       setIsStreaming(false);
       onError?.(err);
       throw err;

@@ -62,10 +62,12 @@ function listRoutines() {
 
 function createRoutine(input = {}) {
   const now = new Date();
+  if (typeof input.prompt !== "string") throw new Error("Routine prompt must be a string.");
+
   const routine = {
     id: randomUUID(),
     name: String(input.name || "New routine").trim(),
-    prompt: String(input.prompt || "").trim(),
+    prompt: input.prompt.trim(),
     schedule: input.schedule || "daily",
     time: input.time || "09:00",
     interval_minutes: Number(input.interval_minutes) || 60,
@@ -100,7 +102,10 @@ function updateRoutine(id, updates = {}) {
     updatedAt: new Date().toISOString(),
   };
   if (updates.enabled !== undefined) next.enabled = Boolean(updates.enabled);
-  if (updates.prompt !== undefined) next.prompt = String(updates.prompt || "").trim();
+  if (updates.prompt !== undefined) {
+    if (typeof updates.prompt !== "string") throw new Error("Routine prompt must be a string.");
+    next.prompt = updates.prompt.trim();
+  }
   if (!next.prompt) throw new Error("Routine prompt is required.");
   next.nextRunAt = next.enabled ? nextRunFor(next) : null;
 

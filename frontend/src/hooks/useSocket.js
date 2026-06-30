@@ -5,7 +5,7 @@
 // Connects to the backend Socket.IO server and listens
 // for real-time agent/orchestrator/execution events.
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { io } from "socket.io-client";
 import useAppStore from "@/store/appStore";
 
@@ -26,11 +26,18 @@ const SOCKET_URL =
  */
 export default function useSocket() {
   const socketRef = useRef(null);
+  const [socketState, setSocketState] = useState({
+    socket: null,
+    connected: false,
+  });
   const addMessage = useAppStore((s) => s.addMessage);
   const authToken = useAppStore((s) => s.auth?.token);
+  const isAuthenticated = useAppStore((s) => s.auth?.isAuthenticated);
 
   const connect = useCallback(() => {
+    if (!isAuthenticated || !authToken) return;
     if (socketRef.current?.connected) return;
+    if (socketRef.current) socketRef.current.disconnect();
 
     const socket = io(SOCKET_URL, {
       path: "/socket.io",
@@ -39,15 +46,17 @@ export default function useSocket() {
       reconnectionDelay: 2000,
       reconnectionAttempts: 10,
       autoConnect: true,
-      auth: authToken ? { token: authToken } : {},
+      auth: { token: authToken },
     });
 
     socket.on("connect", () => {
       console.log("[Socket.IO] Connected:", socket.id);
+      setSocketState({ socket, connected: true });
     });
 
     socket.on("disconnect", (reason) => {
       console.log("[Socket.IO] Disconnected:", reason);
+      setSocketState({ socket, connected: false });
     });
 
     socket.on("connect_error", (err) => {
@@ -90,7 +99,7 @@ export default function useSocket() {
 
       if (step.type === "orchestrator_complete") {
         const duration = step.duration_ms ? `${(step.duration_ms / 1000).toFixed(1)}s` : "";
-        const msg = `✅ Orchestration complete — ${step.totalSteps} steps, ${step.agents_used?.length || 0} agents${duration ? ` in ${duration}` : ""}.`;
+        const msg = ` Orchestration complete — ${step.totalSteps} steps, ${step.agents_used?.length || 0} agents${duration ? ` in ${duration}` : ""}.`;
         addMessage({
           role: "assistant",
           text: msg,
@@ -108,11 +117,11 @@ export default function useSocket() {
     });
 
     // ── Stream events (intent/plan via socket) ──
-    socket.on("stream:intent:complete", (data) => {
+    socket.on("stream:intent:complete", () => {
       console.log("[Socket.IO] stream:intent:complete");
     });
 
-    socket.on("stream:plan:complete", (data) => {
+    socket.on("stream:plan:complete", () => {
       console.log("[Socket.IO] stream:plan:complete");
     });
 
@@ -121,22 +130,26 @@ export default function useSocket() {
     });
 
     socketRef.current = socket;
-  }, [addMessage, authToken]);
+    setSocketState({ socket, connected: socket.connected });
+  }, [addMessage, authToken, isAuthenticated]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.disconnect();
       socketRef.current = null;
     }
+    setSocketState({ socket: null, connected: false });
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated || !authToken) {
+      const timer = window.setTimeout(disconnect, 0);
+      return () => window.clearTimeout(timer);
+    }
+
     connect();
     return () => disconnect();
-  }, [connect, disconnect]);
+  }, [authToken, connect, disconnect, isAuthenticated]);
 
-  return {
-    socket: socketRef.current,
-    connected: socketRef.current?.connected ?? false,
-  };
+  return socketState;
 }

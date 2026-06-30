@@ -1,6 +1,7 @@
 /**
  * Environment validation — fails fast on missing critical vars in production.
  */
+const config = require("../config");
 
 const required = {
   production: ["GEMINI_API_KEY", "JWT_SECRET", "DATABASE_URL"],
@@ -39,7 +40,7 @@ function validateEnv() {
   // Validate JWT_SECRET is not the default in production
   if (
     env === "production" &&
-    process.env.JWT_SECRET === "change-this-to-a-random-64-char-string-in-production"
+    process.env.JWT_SECRET === config.JWT_SECRET_PLACEHOLDER
   ) {
     console.error("❌  JWT_SECRET is still the default placeholder. Set a real secret.");
     process.exit(1);

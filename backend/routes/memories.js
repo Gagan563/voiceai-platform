@@ -8,12 +8,12 @@ const { getAllMemories, deleteMemory, clearAllMemories } = require("../services/
 const router = express.Router();
 
 /**
- * GET /memories/:userId
- * Returns all stored memories for a user.
+ * GET /memories
+ * Returns all stored memories for the authenticated user.
  */
-router.get("/:userId", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
     const memories = await getAllMemories(userId);
 
     res.json({
@@ -29,17 +29,17 @@ router.get("/:userId", async (req, res) => {
 });
 
 /**
- * DELETE /memories/:userId/all
- * Clears all memories for a user.
+ * DELETE /memories/all
+ * Clears all memories for the authenticated user.
  */
-router.delete("/:userId/all", async (req, res) => {
+router.delete("/all", async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
     const result = await clearAllMemories(userId);
 
     res.json({
       success: true,
-      message: `Cleared all memories for user ${userId}`,
+      message: "Cleared all memories",
       deleted: result.count,
     });
   } catch (error) {
@@ -49,12 +49,13 @@ router.delete("/:userId/all", async (req, res) => {
 });
 
 /**
- * DELETE /memories/:userId/:memoryId
+ * DELETE /memories/:memoryId
  * Deletes a specific memory.
  */
-router.delete("/:userId/:memoryId", async (req, res) => {
+router.delete("/:memoryId", async (req, res) => {
   try {
-    const { userId, memoryId } = req.params;
+    const { memoryId } = req.params;
+    const userId = req.user.id;
     const result = await deleteMemory(userId, memoryId);
 
     if (result.count === 0) {

@@ -50,7 +50,7 @@ export default function MemoryView({ isOpen, onClose }) {
     setLoading(true);
     setError(null);
     try {
-      const result = await getMemories("default-user");
+      const result = await getMemories();
       setMemories(result.memories || []);
     } catch (err) {
       setError(err.message || "Failed to load memories");
@@ -68,7 +68,7 @@ export default function MemoryView({ isOpen, onClose }) {
   const handleDelete = async (memoryId) => {
     setDeleting((prev) => new Set(prev).add(memoryId));
     try {
-      await apiDeleteMemory("default-user", memoryId);
+      await apiDeleteMemory(memoryId);
       setMemories((prev) => prev.filter((m) => m.id !== memoryId));
     } catch (err) {
       setError(err.message || "Delete failed");
@@ -86,7 +86,7 @@ export default function MemoryView({ isOpen, onClose }) {
 
     setLoading(true);
     try {
-      await apiClearAll("default-user");
+      await apiClearAll();
       setMemories([]);
     } catch (err) {
       setError(err.message || "Clear failed");

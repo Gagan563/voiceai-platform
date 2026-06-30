@@ -5,10 +5,9 @@ const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const ai = require("./ai");
+const config = require("../config");
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  "postgresql://voiceai:voiceai_secret@localhost:5432/voiceai_db";
+const DATABASE_URL = config.DATABASE_URL;
 const LOCAL_DATA_DIR = path.join(__dirname, "..", "data");
 const LOCAL_MEMORY_FILE = path.join(LOCAL_DATA_DIR, "memories.json");
 
@@ -16,7 +15,7 @@ let prisma = null;
 let pool = null;
 
 function preferLocalMemory() {
-  return process.env.VOICEAI_MEMORY_MODE === "local";
+  return config.MEMORY_MODE === "local";
 }
 
 function ensureLocalStore() {
@@ -69,14 +68,14 @@ async function ensureUser(userId) {
 }
 
 async function generateEmbedding(text) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!config.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is required to generate memory embeddings.");
   }
 
   const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -277,7 +276,7 @@ async function clearAllMemories(userId) {
 }
 
 async function ensureDefaultUser() {
-  const userId = "default-user";
+  const userId = config.DEFAULT_USER_ID;
   try {
     await ensureUser(userId);
   } catch (error) {
@@ -291,7 +290,7 @@ function getMemoryStatus() {
   return {
     mode: preferLocalMemory() ? "local" : "postgres_with_local_fallback",
     local_file: LOCAL_MEMORY_FILE,
-    embeddings_configured: Boolean(process.env.OPENAI_API_KEY),
+    embeddings_configured: config.isOpenAIConfigured(),
     database_configured: Boolean(DATABASE_URL),
   };
 }

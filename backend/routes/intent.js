@@ -7,6 +7,7 @@ const express = require("express");
 const { INTENT_EXTRACTION_PROMPT } = require("../prompts");
 const { recallMemory, extractFacts, saveMemory } = require("../services/memory");
 const ai = require("../services/ai");
+const config = require("../config");
 
 const router = express.Router();
 
@@ -17,7 +18,8 @@ function buildMemoryContext(memories) {
 
 router.post("/", async (req, res) => {
   try {
-    const { text, userId = "default-user" } = req.body;
+    const { text } = req.body;
+    const userId = req.user?.id || config.DEFAULT_USER_ID;
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({

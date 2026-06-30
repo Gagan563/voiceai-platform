@@ -10,11 +10,21 @@ const { recallMemory, extractFacts, saveMemory } = require("../services/memory")
 const ai = require("../services/ai");
 const { runAgent } = require("../services/agent");
 const { executeTool } = require("../services/tools");
+const { emitToUser } = require("../socket");
 const {
   createReminderFromStep,
 } = require("../services/reminders");
+const config = require("../config");
 
 const router = express.Router();
+
+function errorMessage(error, fallback = "Unexpected error") {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function currentUserId(req) {
+  return req.user?.id;
+}
 
 // ── Helpers ──
 
@@ -133,7 +143,7 @@ function fallbackPlan(intent = {}) {
   ];
 }
 
-async function extractIntentForText(text, userId = "default-user") {
+async function extractIntentForText(text, userId = config.DEFAULT_USER_ID) {
   let memoriesContext = "";
   try {
     const memories = await recallMemory(userId, text, 5);
@@ -142,7 +152,7 @@ async function extractIntentForText(text, userId = "default-user") {
       console.log(`[Intent] Injecting ${memories.length} memories`);
     }
   } catch (err) {
-    console.warn("[Intent] Memory recall skipped:", err.message);
+    console.warn("[Intent] Memory recall skipped:", errorMessage(err));
   }
 
   const systemPrompt = INTENT_EXTRACTION_PROMPT + memoriesContext;
@@ -156,7 +166,7 @@ async function extractIntentForText(text, userId = "default-user") {
         await saveMemory(userId, fact);
       }
     } catch (err) {
-      console.warn("[Intent] Fact extraction skipped:", err.message);
+      console.warn("[Intent] Fact extraction skipped:", errorMessage(err));
     }
   });
 
@@ -195,7 +205,7 @@ function isReminderStep(step) {
   );
 }
 
-async function executePlanStep(step, index) {
+async function executePlanStep(step, index, userId) {
   const text = stepText(step);
 
   if (step.requires_input) {
@@ -204,12 +214,12 @@ async function executePlanStep(step, index) {
 
   if (/search|research|web/.test(text)) {
     const searchQuery = step.query || step.description || step.goal || text;
-    const result = await executeTool("search_web", { query: searchQuery });
+    const result = await executeTool("search_web", { query: searchQuery }, { userId });
     return { step: index + 1, step_id: step.id || null, status: result.success ? "completed" : "failed", message: result.success ? "I found the available search results." : result.error, result };
   }
 
   if (isReminderStep(step)) {
-    const reminder = createReminderFromStep(step);
+    const reminder = createReminderFromStep(step, userId);
     return {
       step: index + 1, step_id: step.id || null, status: "completed",
       message: reminder.dueAt ? `I saved the reminder locally for ${new Date(reminder.dueAt).toLocaleString()}.` : "I saved the reminder locally. Add a clear time if you want an exact notification.",
@@ -253,16 +263,30 @@ function buildExecutionBatches(plan) {
   return batches;
 }
 
-async function executePlanBatches(plan) {
+async function executePlanBatches(plan, userId) {
   const batches = buildExecutionBatches(plan);
   const results = new Array(plan.length);
   const batchSummaries = [];
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    const batchResults = batch.length > 1
-      ? await Promise.all(batch.map(({ step, index }) => executePlanStep(step, index)))
-      : [await executePlanStep(batch[0].step, batch[0].index)];
+    const settled = batch.length > 1
+      ? await Promise.allSettled(batch.map(({ step, index }) => executePlanStep(step, index, userId)))
+      : [await executePlanStep(batch[0].step, batch[0].index, userId).then(
+          (value) => ({ status: "fulfilled", value }),
+          (reason) => ({ status: "rejected", reason })
+        )];
+
+    const batchResults = settled.map((result, offset) => {
+      if (result.status === "fulfilled") return result.value;
+      const { step, index } = batch[offset];
+      return {
+        step: index + 1,
+        step_id: step.id || null,
+        status: "failed",
+        message: errorMessage(result.reason, "Step failed"),
+      };
+    });
 
     batchResults.forEach((result, offset) => { results[batch[offset].index] = result; });
     batchSummaries.push({ batch: batchIndex + 1, mode: batch.length > 1 ? "parallel" : "sequential", steps: batch.map(({ index }) => index + 1) });
@@ -312,7 +336,7 @@ async function reviewExecution({ plan, results, agent }) {
       corrections: Array.isArray(review.corrections) ? review.corrections : fallback.corrections,
     };
   } catch (error) {
-    console.warn("[Execute] Review fallback:", error.message);
+    console.warn("[Execute] Review fallback:", errorMessage(error));
     return fallback;
   }
 }
@@ -340,7 +364,7 @@ function planToAgentInput(plan) {
  */
 router.post("/intent", async (req, res) => {
   try {
-    const { text, userId } = req.body;
+    const { text } = req.body;
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({
@@ -350,10 +374,10 @@ router.post("/intent", async (req, res) => {
       });
     }
 
-    const currentUserId = userId || "default-user";
-    console.log(`[Intent] Processing: "${text.substring(0, 80)}"`);
+    const userId = currentUserId(req);
+    console.log("[Intent] Processing request");
 
-    const intent = await extractIntentForText(text, currentUserId);
+    const intent = await extractIntentForText(text, userId);
 
     console.log(`[Intent] Extracted: action_type="${intent.action_type}", confidence=${intent.confidence}`);
 
@@ -363,12 +387,12 @@ router.post("/intent", async (req, res) => {
       metadata: { engine: "ai_router", clarification_required: Boolean(intent.clarification?.required) },
     });
   } catch (error) {
-    console.error("[Intent] Error:", error.message);
+    console.error("[Intent] Error:", errorMessage(error));
     const intent = enrichIntent(fallbackIntent(req.body?.text), req.body?.text);
     res.json({
       success: true,
       intent,
-      metadata: { engine: "local_fallback", reason: error.message, memories_used: false },
+      metadata: { engine: "local_fallback", reason: errorMessage(error), memories_used: false },
     });
   }
 });
@@ -384,14 +408,14 @@ router.post("/plan", async (req, res) => {
       return res.status(400).json({ error: "Invalid request body", hint: "Send JSON with an intent object." });
     }
 
-    console.log(`[Plan] Generating plan for: "${intent.goal}"`);
+    console.log("[Plan] Generating plan");
     const planArray = await generatePlanForIntent(intent);
 
     res.json({ success: true, plan: planArray, total_steps: planArray.length, metadata: { engine: "gemini" } });
   } catch (error) {
-    console.error("[Plan] Error:", error.message);
+    console.error("[Plan] Error:", errorMessage(error));
     const planArray = enrichPlanSteps(fallbackPlan(req.body?.intent), req.body?.intent);
-    res.json({ success: true, plan: planArray, total_steps: planArray.length, metadata: { engine: "local_fallback", reason: error.message } });
+    res.json({ success: true, plan: planArray, total_steps: planArray.length, metadata: { engine: "local_fallback", reason: errorMessage(error) } });
   }
 });
 
@@ -400,22 +424,23 @@ router.post("/plan", async (req, res) => {
  */
 router.post("/chat/direct", async (req, res) => {
   try {
-    const { text, userId } = req.body;
+    const { text } = req.body;
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "Invalid request body", hint: 'Send JSON with a "text" field.' });
     }
 
-    console.log(`[Chat] Direct answer for: "${text.substring(0, 80)}"`);
+    const userId = currentUserId(req);
+    console.log("[Chat] Direct answer");
 
     let memoriesContext = "";
     try {
-      const memories = await recallMemory(userId || "default-user", text, 3);
+      const memories = await recallMemory(userId, text, 3);
       if (memories.length > 0) {
         memoriesContext = `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
       }
     } catch (err) {
-      console.warn("[Chat] Memory recall skipped:", err.message);
+      console.warn("[Chat] Memory recall skipped:", errorMessage(err));
     }
 
     const systemPrompt = `You are NOVA, a warm, direct, and practical voice-first AI assistant. Answer the user's question naturally and concisely. If it's a calculation, show the result. If it's a factual question, give the answer. Sound like a helpful person, not a robot. Do not describe steps or plans — just answer.${memoriesContext}`;
@@ -424,20 +449,20 @@ router.post("/chat/direct", async (req, res) => {
 
     res.json({ success: true, answer: answer.trim(), metadata: { engine: "ai_router", mode: "direct" } });
   } catch (error) {
-    console.error("[Chat] Direct answer error:", error.message);
-    res.json({ success: true, answer: "I wasn't able to process that right now. Could you try again?", metadata: { engine: "local_fallback", reason: error.message } });
+    console.error("[Chat] Direct answer error:", errorMessage(error));
+    res.json({ success: true, answer: "I wasn't able to process that right now. Could you try again?", metadata: { engine: "local_fallback", reason: errorMessage(error) } });
   }
 });
 
 /**
- * GET /chat/stream — SSE streaming endpoint for real-time AI responses
+ * POST /chat/stream — SSE streaming endpoint for real-time AI responses
  */
-router.get("/chat/stream", async (req, res) => {
-  const text = req.query.text || req.query.q;
-  const userId = req.query.userId || "default-user";
+router.post("/chat/stream", async (req, res) => {
+  const text = req.body?.text;
+  const userId = currentUserId(req);
 
-  if (!text) {
-    return res.status(400).json({ error: "Missing 'text' query parameter." });
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ error: "Invalid request body", hint: 'Send JSON with a "text" field.' });
   }
 
   // Set up SSE headers
@@ -457,7 +482,7 @@ router.get("/chat/stream", async (req, res) => {
       if (memories.length > 0) {
         memoriesContext = `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
       }
-    } catch (err) {
+    } catch {
       // Memory recall is optional for streaming
     }
 
@@ -480,8 +505,8 @@ router.get("/chat/stream", async (req, res) => {
 
     res.write(`data: ${JSON.stringify({ type: "done", timestamp: Date.now() })}\n\n`);
   } catch (error) {
-    console.error("[Stream] Error:", error.message);
-    res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+    console.error("[Stream] Error:", errorMessage(error));
+    res.write(`data: ${JSON.stringify({ type: "error", message: errorMessage(error) })}\n\n`);
   }
 
   res.end();
@@ -492,7 +517,7 @@ router.get("/chat/stream", async (req, res) => {
  */
 router.post("/execute", async (req, res) => {
   const plan = req.body.plan || req.body.steps;
-  const userId = req.body.userId || "default-user";
+  const userId = currentUserId(req);
 
   if (!plan || !Array.isArray(plan)) {
     return res.status(400).json({ error: "Invalid plan" });
@@ -509,12 +534,12 @@ router.post("/execute", async (req, res) => {
         input: planToAgentInput(plan),
         userId,
         onStep: (step) => {
-          if (io) io.emit("execution:step", { execution_id: executionId, ...step });
+          emitToUser(io, userId, "execution:step", { execution_id: executionId, ...step });
         },
       });
     }
 
-    const execution = await executePlanBatches(plan);
+    const execution = await executePlanBatches(plan, userId);
     results.push(...execution.results);
 
     const failed = results.filter((step) => step.status === "failed");
@@ -534,8 +559,8 @@ router.post("/execute", async (req, res) => {
       agent: agentResult,
     });
   } catch (error) {
-    console.error("[Execute] Error:", error.message);
-    res.status(500).json({ error: "Plan execution failed", details: error.message });
+    console.error("[Execute] Error:", errorMessage(error));
+    res.status(500).json({ error: "Plan execution failed", details: errorMessage(error) });
   }
 });
 

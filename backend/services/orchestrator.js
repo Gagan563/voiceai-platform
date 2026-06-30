@@ -14,8 +14,8 @@
 
 const ai = require("./ai");
 const { executeTool, TOOL_DEFINITIONS } = require("./tools");
-const { runTerminal } = require("./terminal");
 const { callConnector } = require("./mcp");
+const config = require("../config");
 
 // ── Agent Specializations ──
 
@@ -190,7 +190,7 @@ function topoSort(steps) {
 
 // ── Agent Runner ──
 
-async function runSpecialistAgent(agentType, task, context = {}, onStep) {
+async function runSpecialistAgent(agentType, task, context = {}, onStep, userId) {
   const agent = AGENTS[agentType] || AGENTS.coder;
   const maxIterations = 10;
   const emit = onStep || (() => {});
@@ -264,14 +264,7 @@ async function runSpecialistAgent(agentType, task, context = {}, onStep) {
     // Execute the tool
     let toolResult;
     try {
-      if (action.tool === "run_terminal") {
-        toolResult = await runTerminal({
-          command: action.params?.command || "",
-          cwd: action.params?.cwd,
-        });
-      } else {
-        toolResult = await executeTool(action.tool, action.params || {});
-      }
+      toolResult = await executeTool(action.tool, action.params || {}, { userId });
     } catch (err) {
       toolResult = { success: false, error: err.message };
     }
@@ -321,7 +314,7 @@ async function runSpecialistAgent(agentType, task, context = {}, onStep) {
  * @param {function} options.onStep — Progress callback
  * @returns {{ success, summary, dag, results, duration_ms }}
  */
-async function orchestrate(goal, { userId = "default-user", onStep } = {}) {
+async function orchestrate(goal, { userId = config.DEFAULT_USER_ID, onStep } = {}) {
   const emit = onStep || (() => {});
   const startTime = Date.now();
 
@@ -387,7 +380,8 @@ async function orchestrate(goal, { userId = "default-user", onStep } = {}) {
         step.agent,
         step.description,
         depContext,
-        (event) => emit({ ...event, stepId: step.id, level: levelIdx + 1 })
+        (event) => emit({ ...event, stepId: step.id, level: levelIdx + 1 }),
+        userId
       );
 
       allResults[step.id] = results;

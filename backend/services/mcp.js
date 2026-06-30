@@ -8,6 +8,84 @@
 
 // ── Connector Handlers ──
 
+function parseRequestDate(value, fieldName, options = {}) {
+  if (value === undefined || value === null || value === "") return null;
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be an ISO date string.`);
+  }
+
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const match = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[tT\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?)?$/
+  );
+  if (!match) {
+    throw new Error(`${fieldName} must be an ISO date string.`);
+  }
+
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw, msRaw, zoneRaw] = match;
+  if (options.requireTime && hourRaw === undefined) {
+    throw new Error(`${fieldName} must include a time.`);
+  }
+  if (options.requireTimezone && !zoneRaw) {
+    throw new Error(`${fieldName} must include a timezone offset or Z.`);
+  }
+
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const hour = hourRaw === undefined ? 0 : Number(hourRaw);
+  const minute = minuteRaw === undefined ? 0 : Number(minuteRaw);
+  const second = secondRaw === undefined ? 0 : Number(secondRaw);
+  const millisecond = msRaw === undefined ? 0 : Number(msRaw.padEnd(3, "0"));
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    throw new Error(`Invalid ${fieldName}.`);
+  }
+
+  let timestamp = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+  const utcDate = new Date(timestamp);
+  if (
+    utcDate.getUTCFullYear() !== year ||
+    utcDate.getUTCMonth() !== month - 1 ||
+    utcDate.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid ${fieldName}.`);
+  }
+
+  if (zoneRaw && zoneRaw !== "Z") {
+    const sign = zoneRaw[0] === "+" ? 1 : -1;
+    const offsetHours = Number(zoneRaw.slice(1, 3));
+    const offsetMinutes = Number(zoneRaw.slice(4, 6));
+    if (offsetHours > 23 || offsetMinutes > 59) {
+      throw new Error(`Invalid ${fieldName}.`);
+    }
+    timestamp -= sign * (offsetHours * 60 + offsetMinutes) * 60000;
+  }
+
+  return new Date(timestamp);
+}
+
+function parseDurationMinutes(value) {
+  if (value === undefined || value === null || value === "") return 30;
+
+  const duration = Number(value);
+  if (!Number.isInteger(duration) || duration <= 0 || duration > 24 * 60) {
+    throw new Error("duration_minutes must be an integer from 1 to 1440.");
+  }
+
+  return duration;
+}
+
 async function handleCalendar(action, params) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -51,10 +129,12 @@ async function handleCalendar(action, params) {
 
     switch (action) {
       case "list_events": {
-        const start = params.date_range_start || new Date().toISOString();
-        const end =
-          params.date_range_end ||
-          new Date(Date.now() + 7 * 86400000).toISOString();
+        const startDate = parseRequestDate(params.date_range_start, "date_range_start") || new Date();
+        const endDate =
+          parseRequestDate(params.date_range_end, "date_range_end") ||
+          new Date(Date.now() + 7 * 86400000);
+        const start = startDate.toISOString();
+        const end = endDate.toISOString();
         const res = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(start)}&timeMax=${encodeURIComponent(end)}&singleEvents=true&orderBy=startTime&maxResults=20`,
           { headers }
@@ -73,13 +153,19 @@ async function handleCalendar(action, params) {
       }
 
       case "create_event": {
+        const startDate = parseRequestDate(params.datetime, "datetime", {
+          requireTime: true,
+          requireTimezone: true,
+        });
+        if (!startDate) {
+          return { success: false, error: "datetime is required." };
+        }
+        const durationMinutes = parseDurationMinutes(params.duration_minutes);
         const event = {
           summary: params.title,
-          start: { dateTime: params.datetime, timeZone: params.timezone || "UTC" },
+          start: { dateTime: startDate.toISOString(), timeZone: params.timezone || "UTC" },
           end: {
-            dateTime: new Date(
-              new Date(params.datetime).getTime() + (params.duration_minutes || 30) * 60000
-            ).toISOString(),
+            dateTime: new Date(startDate.getTime() + durationMinutes * 60000).toISOString(),
             timeZone: params.timezone || "UTC",
           },
           attendees: (params.attendees || []).map((email) => ({ email })),

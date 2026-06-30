@@ -1,8 +1,13 @@
 const ai = require("./ai");
 const { TOOL_DEFINITIONS, executeTool, clearWorkspace } = require("./tools");
 const { recallMemory, extractFacts, saveMemory } = require("./memory");
+const config = require("../config");
 
 const MAX_ITERATIONS = 18;
+
+function errorMessage(error, fallback = "Unexpected error") {
+  return error instanceof Error ? error.message : fallback;
+}
 
 const AGENT_SYSTEM_PROMPT = `You are NOVA, an autonomous app-building agent with the judgment and tone of a senior human collaborator.
 
@@ -383,18 +388,18 @@ function mockAction(input, iteration) {
   };
 }
 
-async function runAgent({ input, files = [], userId = "default-user", onStep }) {
+async function runAgent({ input, files = [], userId = config.DEFAULT_USER_ID, onStep }) {
   const emit = onStep || (() => {});
   const useMock = !ai.isAvailable();
   const steps = [];
   let finalResult = null;
   let isComplete = false;
 
-  clearWorkspace();
+  clearWorkspace(userId);
 
   emit({
     type: "agent_start",
-    message: `I am starting the build for: "${input.substring(0, 80)}"`,
+    message: "I am starting the build.",
     timestamp: Date.now(),
   });
 
@@ -405,7 +410,7 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
       memoryContext = `\n\nUser memory:\n${memories.map((memory, index) => `${index + 1}. ${memory}`).join("\n")}`;
     }
   } catch (error) {
-    console.warn("[Agent] Memory recall skipped:", error.message);
+    console.warn("[Agent] Memory recall skipped:", errorMessage(error));
   }
 
   const fileContext = files.length
@@ -453,9 +458,9 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
 
     let toolResult;
     try {
-      toolResult = await executeTool(action.tool, action.params || {});
+      toolResult = await executeTool(action.tool, action.params || {}, { userId });
     } catch (error) {
-      toolResult = { success: false, error: error.message };
+      toolResult = { success: false, error: errorMessage(error) };
     }
 
     steps.push({
@@ -512,7 +517,7 @@ async function runAgent({ input, files = [], userId = "default-user", onStep }) 
       const facts = await extractFacts(`User asked: ${input}\nAgent built: ${result.summary}`);
       await Promise.all(facts.map((fact) => saveMemory(userId, fact)));
     } catch (error) {
-      console.warn("[Agent] Fact extraction skipped:", error.message);
+      console.warn("[Agent] Fact extraction skipped:", errorMessage(error));
     }
   });
 

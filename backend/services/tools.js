@@ -32,7 +32,7 @@ if (!fs.existsSync(OUTPUT_DIR)) {
  * Creates the directory if it doesn't exist.
  */
 function getUserOutputDir(userId) {
-  if (!userId || userId === "default-user") return OUTPUT_DIR;
+  if (!userId) return OUTPUT_DIR;
 
   // Sanitize userId to prevent directory traversal
   const safeId = String(userId).replace(/[^a-zA-Z0-9_@.-]/g, "_").substring(0, 64);
@@ -54,7 +54,8 @@ function resolveOutputPath(filename, userId) {
   const baseDir = getUserOutputDir(userId);
   const resolved = path.resolve(baseDir, cleanFilename);
   const workspace = path.resolve(baseDir);
-  if (resolved !== workspace && !resolved.startsWith(workspace + path.sep)) {
+  const relative = path.relative(workspace, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("File path escapes the output workspace.");
   }
 
@@ -71,9 +72,10 @@ function resolveLocalPath(targetPath) {
   }
 
   const resolved = path.resolve(String(targetPath || ""));
-  const allowed = LOCAL_ACCESS_ROOTS.some(
-    (root) => resolved === root || resolved.startsWith(root + path.sep)
-  );
+  const allowed = LOCAL_ACCESS_ROOTS.some((root) => {
+    const relative = path.relative(root, resolved);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
 
   if (!allowed) {
     throw new Error("Path is outside the approved local access roots.");
@@ -211,7 +213,7 @@ const TOOL_DEFINITIONS = [
 /**
  * Generate code using Claude.
  */
-async function generate_code({ language, filename, description, context }) {
+async function generate_code({ language, filename, description, context }, contextOptions = {}) {
   const systemPrompt = `You are an expert ${language} developer. Generate complete, production-ready, beautiful code.
 
 RULES:
@@ -240,7 +242,7 @@ RULES:
     .trim();
 
   // Write to file
-  const filePath = resolveOutputPath(filename);
+  const filePath = resolveOutputPath(filename, contextOptions.userId);
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, cleaned, "utf-8");
@@ -257,8 +259,8 @@ RULES:
 /**
  * Write content to a file.
  */
-function write_file({ filename, content }) {
-  const filePath = resolveOutputPath(filename);
+function write_file({ filename, content }, contextOptions = {}) {
+  const filePath = resolveOutputPath(filename, contextOptions.userId);
   const body = String(content ?? "");
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -274,19 +276,22 @@ function write_file({ filename, content }) {
 /**
  * Read a file from the workspace.
  */
-function read_file({ filename }) {
+function read_file({ filename }, contextOptions = {}) {
   // Check output dir first, then uploaded files
   let outputPath;
   try {
-    outputPath = resolveOutputPath(filename);
+    outputPath = resolveOutputPath(filename, contextOptions.userId);
   } catch (error) {
     return { success: false, error: error.message };
   }
 
   const uploadDir = path.resolve(__dirname, "..", "uploads");
   const uploadPath = path.resolve(uploadDir, String(filename || ""));
+  const uploadRelative = path.relative(uploadDir, uploadPath);
   const canReadUpload =
-    uploadPath !== uploadDir && uploadPath.startsWith(uploadDir + path.sep);
+    uploadRelative !== "" &&
+    !uploadRelative.startsWith("..") &&
+    !path.isAbsolute(uploadRelative);
 
   let filePath;
   if (fs.existsSync(outputPath)) {
@@ -309,8 +314,8 @@ function read_file({ filename }) {
 /**
  * Modify an existing file using Claude.
  */
-async function modify_file({ filename, instructions }) {
-  const readResult = read_file({ filename });
+async function modify_file({ filename, instructions }, contextOptions = {}) {
+  const readResult = read_file({ filename }, contextOptions);
   if (!readResult.success) return readResult;
 
   const newContent = (await ai.chat(
@@ -322,7 +327,7 @@ async function modify_file({ filename, instructions }) {
     .replace(/\n?```$/gm, "")
     .trim();
 
-  write_file({ filename, content: newContent });
+  write_file({ filename, content: newContent }, contextOptions);
 
   return {
     success: true,
@@ -335,7 +340,7 @@ async function modify_file({ filename, instructions }) {
 /**
  * List all files in the output workspace.
  */
-function list_files() {
+function list_files(_params = {}, contextOptions = {}) {
   function walk(dir, prefix = "") {
     const entries = [];
     if (!fs.existsSync(dir)) return entries;
@@ -352,17 +357,17 @@ function list_files() {
     return entries;
   }
 
-  const files = walk(OUTPUT_DIR);
+  const files = walk(getUserOutputDir(contextOptions.userId));
   return { success: true, files, count: files.length };
 }
 
 /**
  * Mark a file for live preview.
  */
-function preview_html({ filename }) {
+function preview_html({ filename }, contextOptions = {}) {
   let filePath;
   try {
-    filePath = resolveOutputPath(filename);
+    filePath = resolveOutputPath(filename, contextOptions.userId);
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -541,22 +546,22 @@ function complete({ summary, preview_file }) {
 /**
  * Execute a tool call from the agent.
  */
-async function executeTool(toolName, params) {
-  console.log(`[Tool] Executing: ${toolName}`, JSON.stringify(params).substring(0, 100));
+async function executeTool(toolName, params, contextOptions = {}) {
+  console.log(`[Tool] Executing: ${toolName}`);
 
   switch (toolName) {
     case "generate_code":
-      return generate_code(params);
+      return generate_code(params, contextOptions);
     case "write_file":
-      return write_file(params);
+      return write_file(params, contextOptions);
     case "read_file":
-      return read_file(params);
+      return read_file(params, contextOptions);
     case "modify_file":
-      return modify_file(params);
+      return modify_file(params, contextOptions);
     case "list_files":
-      return list_files();
+      return list_files(params, contextOptions);
     case "preview_html":
-      return preview_html(params);
+      return preview_html(params, contextOptions);
     case "search_web":
       return search_web(params);
     case "list_local_directory":
@@ -567,8 +572,17 @@ async function executeTool(toolName, params) {
       return write_local_file(params);
     case "mcp_call":
       return callConnector(params);
-    case "run_terminal":
-      return runTerminal({ command: params.command, cwd: params.cwd || OUTPUT_DIR });
+    case "run_terminal": {
+      const workspace = getUserOutputDir(contextOptions.userId);
+      const requestedCwd = params.cwd
+        ? path.resolve(workspace, String(params.cwd))
+        : workspace;
+      const relative = path.relative(workspace, requestedCwd);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        return { success: false, error: "Terminal cwd must stay inside the output workspace." };
+      }
+      return runTerminal({ command: params.command, cwd: requestedCwd });
+    }
     case "think":
       return think(params);
     case "complete":
@@ -581,11 +595,15 @@ async function executeTool(toolName, params) {
 /**
  * Clear the output directory for a fresh workspace.
  */
-function clearWorkspace() {
-  if (fs.existsSync(OUTPUT_DIR)) {
-    fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
+function clearWorkspace(userId) {
+  if (!userId) {
+    throw new Error("Cannot clear workspace without a user id.");
   }
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const workspace = getUserOutputDir(userId);
+  if (fs.existsSync(workspace)) {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+  fs.mkdirSync(workspace, { recursive: true });
 }
 
 module.exports = {

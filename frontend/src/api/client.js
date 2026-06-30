@@ -1,4 +1,11 @@
 import axios from "axios";
+import {
+  BACKEND_URL,
+  USE_MOCK_API,
+  STORE_KEY,
+  DEFAULT_MODEL,
+  DEFAULT_PORTFOLIO_SYMBOLS,
+} from "@/config";
 
 /**
  * VoxMind API client.
@@ -6,8 +13,13 @@ import axios from "axios";
  * A real Axios instance is configured so the app talks to the local backend by
  * default. Set VITE_USE_MOCK_API=true when you want the standalone demo mode.
  */
-const BASE_URL = import.meta.env.VITE_BACKEND_URL || "/api";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "true";
+const BASE_URL = BACKEND_URL;
+const USE_MOCK = USE_MOCK_API;
+let runtimeAuthToken = null;
+
+export function setRuntimeAuthToken(token) {
+  runtimeAuthToken = typeof token === "string" && token ? token : null;
+}
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -17,19 +29,21 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use((config) => {
   try {
-    const raw = localStorage.getItem("voxmind-store");
+    const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const state = JSON.parse(raw)?.state;
       const settings = state?.settings;
       const key = settings?.apiKeys?.anthropic;
       const model = settings?.selectedModel;
-      const token = state?.auth?.token;
-      if (key) config.headers["x-api-key"] = key;
-      if (model) config.headers["x-model"] = model;
-      if (token) config.headers["Authorization"] = `Bearer ${token}`;
+      if (typeof key === "string" && key) config.headers["x-api-key"] = key;
+      if (typeof model === "string" && model) config.headers["x-model"] = model;
     }
   } catch {
     // Persisted settings are optional.
+  }
+
+  if (runtimeAuthToken) {
+    config.headers["Authorization"] = `Bearer ${runtimeAuthToken}`;
   }
 
   return config;
@@ -70,18 +84,40 @@ export const getAgentOutputUrl = (filename) => {
   if (!filename) return null;
   const clean = String(filename).replace(/^\/+/, "");
   const base = BASE_URL === "/api" ? "/api" : BASE_URL.replace(/\/$/, "");
-  return `${base}/agent/output/${encodeURI(clean)}`;
+  return `${base}/agent/output/${clean.split("/").map(encodeURIComponent).join("/")}`;
 };
+
+export function getStreamingHeaders() {
+  const headers = {
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    const state = raw ? JSON.parse(raw)?.state : null;
+    const settings = state?.settings;
+    const key = settings?.apiKeys?.anthropic;
+    const model = settings?.selectedModel;
+    if (typeof key === "string" && key) headers["x-api-key"] = key;
+    if (typeof model === "string" && model) headers["x-model"] = model;
+  } catch {
+    // Persisted settings are optional.
+  }
+
+  if (runtimeAuthToken) headers.Authorization = `Bearer ${runtimeAuthToken}`;
+  return headers;
+}
 
 const getSelectedModel = () => {
   try {
-    const raw = localStorage.getItem("voxmind-store");
+    const raw = localStorage.getItem(STORE_KEY);
     return (
       JSON.parse(raw)?.state?.settings?.selectedModel ||
-      "claude-sonnet-4-20250514"
+      DEFAULT_MODEL
     );
   } catch {
-    return "claude-sonnet-4-20250514";
+    return DEFAULT_MODEL;
   }
 };
 
@@ -381,7 +417,7 @@ export async function updateRoutine(id, updates) {
     await delay(200, 400);
     return { success: true, routine: { id, ...updates } };
   }
-  return apiClient.patch(`/routines/${id}`, updates);
+  return apiClient.patch(`/routines/${encodeURIComponent(id)}`, updates);
 }
 
 export async function deleteRoutine(id) {
@@ -389,7 +425,7 @@ export async function deleteRoutine(id) {
     await delay(200, 400);
     return { success: true, deleted: 1 };
   }
-  return apiClient.delete(`/routines/${id}`);
+  return apiClient.delete(`/routines/${encodeURIComponent(id)}`);
 }
 
 export async function runRoutine(id) {
@@ -397,7 +433,7 @@ export async function runRoutine(id) {
     await delay(700, 1200);
     return { success: true, result: { status: "ok", review: { summary: "Mock routine ran." } } };
   }
-  return apiClient.post(`/routines/${id}/run`, {});
+  return apiClient.post(`/routines/${encodeURIComponent(id)}/run`, {});
 }
 
 export async function transcribeAudio(audioBlob) {
@@ -414,31 +450,31 @@ export async function transcribeAudio(audioBlob) {
   });
 }
 
-export async function getMemories(userId = "default-user") {
+export async function getMemories() {
   if (USE_MOCK) {
     await delay(300, 600);
     return { memories: [] };
   }
 
-  return apiClient.get(`/memories/${userId}`);
+  return apiClient.get("/memories");
 }
 
-export async function deleteMemory(userId = "default-user", memoryId) {
+export async function deleteMemory(memoryId) {
   if (USE_MOCK) {
     await delay(200, 400);
     return { success: true };
   }
 
-  return apiClient.delete(`/memories/${userId}/${memoryId}`);
+  return apiClient.delete(`/memories/${encodeURIComponent(memoryId)}`);
 }
 
-export async function clearAllMemories(userId = "default-user") {
+export async function clearAllMemories() {
   if (USE_MOCK) {
     await delay(300, 500);
     return { success: true, deleted: 0 };
   }
 
-  return apiClient.delete(`/memories/${userId}/all`);
+  return apiClient.delete("/memories/all");
 }
 
 export async function testConnection(key) {
@@ -475,7 +511,7 @@ export async function moduleFinanceQuote(symbol) {
   return apiClient.get(`/modules/finance/quote?symbol=${encodeURIComponent(symbol)}`);
 }
 
-export async function moduleFinancePortfolio(symbols = "AAPL,GOOGL,MSFT") {
+export async function moduleFinancePortfolio(symbols = DEFAULT_PORTFOLIO_SYMBOLS) {
   if (USE_MOCK) {
     await delay(400, 700);
     return {
@@ -572,11 +608,11 @@ export async function novaWellnessJournal(mood, topic) {
 }
 
 export async function novaEmergencyFirstAid(condition) {
-  return apiClient.get(`/nova/emergency/first-aid${condition ? `/${condition}` : ""}`);
+  return apiClient.get(`/nova/emergency/first-aid${condition ? `/${encodeURIComponent(condition)}` : ""}`);
 }
 
 export async function novaEmergencyDisaster(type) {
-  return apiClient.get(`/nova/emergency/disaster/${type}`);
+  return apiClient.get(`/nova/emergency/disaster/${encodeURIComponent(type)}`);
 }
 
 export async function novaEmergencyContacts() {
@@ -594,4 +630,3 @@ export async function listAgents() {
 }
 
 export default apiClient;
-

@@ -292,6 +292,19 @@
     border-color: rgba(34, 211, 238, 0.3);
   }
 
+  .nova-input:focus-visible,
+  .nova-btn-primary:focus-visible,
+  .nova-btn-sm:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--vox-primary);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px var(--vox-primary-glow);
+  }
+
   .nova-input::placeholder {
     color: var(--vox-text-muted);
   }
