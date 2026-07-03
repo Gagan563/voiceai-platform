@@ -34,6 +34,8 @@ const defaultAuth = {
   lastLoginAt: null,
 };
 
+let pendingLogoutRequest = Promise.resolve();
+
 const normalizeTimestamp = (timestamp) =>
   typeof timestamp === "number"
     ? new Date(timestamp).toISOString()
@@ -84,6 +86,14 @@ const getAuthBaseUrl = () => {
 
 const codingApprovalPattern =
   /\b(code|coding|developer|filesystem|file|files|write_file|modify_file|local_file|terminal|command|shell|git|github|deploy|deployment|build|app|website|dashboard|preview|package|install|npm|test|lint|server|database migration)\b/i;
+
+const isExplicitBuildRequest = (text = "") => {
+  const value = String(text || "").toLowerCase();
+  return (
+    /\b(build|create|make|generate|develop)\b/.test(value) &&
+    /\b(app|application|website|web app|dashboard|preview|prototype|page|site|game)\b/.test(value)
+  );
+};
 
 const needsCodingApproval = (plan = [], intent = {}) => {
   const intentText = [
@@ -160,7 +170,7 @@ const needsExecutionPreview = (intent = {}, plan = []) => {
     return false;
   }
 
-  return /(build|create.*(app|website|dashboard|platform|preview|code)|generate.*(app|website|dashboard|preview|code)|preview|code|filesystem|app|website|dashboard|deploy)/.test(text);
+  return /(build|create.*(app|website|dashboard|platform|preview|prototype|game|code)|generate.*(app|website|dashboard|preview|prototype|game|code)|preview|code|filesystem|app|website|dashboard|game|deploy)/.test(text);
 };
 
 const humanAcknowledgement = (intent = {}) => {
@@ -268,6 +278,7 @@ const inferModule = (intent = {}, sourceText = "") => {
   if (intent.module) return intent.module;
 
   const text = `${intent.goal || ""} ${intent.action_type || ""} ${sourceText}`.toLowerCase();
+  if (intent.action_type === "create" || isExplicitBuildRequest(text)) return "write";
   const match = moduleKeywords.find(([, pattern]) => pattern.test(text));
   if (match) return match[0];
 
@@ -289,6 +300,12 @@ const createPreviewArtifact = ({
   const featureHints = extractFeatureHints(`${goal} ${sourceText}`);
   const planActions = plan.map((step) => step.action?.replace(/_/g, " ")).filter(Boolean);
   const previewFile = execution?.agent?.preview_file || execution?.preview_file || null;
+  const updatedAt = new Date().toISOString();
+  const previewVersion = execution?.execution_id || updatedAt;
+  const basePreviewUrl = getAgentOutputUrl(previewFile);
+  const previewUrl = basePreviewUrl
+    ? `${basePreviewUrl}${basePreviewUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(previewVersion)}`
+    : null;
 
   return {
     id: uid(),
@@ -298,7 +315,11 @@ const createPreviewArtifact = ({
       ? "Uploaded requirement"
       : "Command",
     summary:
-      "A one-command agent workspace that accepts files, voice, or text, understands codebases, plans work, runs guarded developer tools, reviews changes, and keeps a preview visible while work is happening.",
+      intent?.goal?.toLowerCase().includes("game")
+        ? "A playable browser game preview with keyboard controls, scoring, collision, and restart."
+        : intent?.goal?.toLowerCase().includes("weather")
+        ? "A responsive weather app preview with current conditions, forecast cards, location search, and clean visual states."
+        : "A one-command agent workspace that accepts files, voice, or text, understands codebases, plans work, runs guarded developer tools, reviews changes, and keeps a preview visible while work is happening.",
     features: featureHints,
     workflow: [
       "Capture requirement",
@@ -334,9 +355,9 @@ const createPreviewArtifact = ({
       "Connector layer",
     ],
     previewFile,
-    previewUrl: getAgentOutputUrl(previewFile),
+    previewUrl,
     agentSummary: execution?.agent?.summary || null,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
   };
 };
 
@@ -364,6 +385,9 @@ const createModuleRecord = ({ module, intent, sourceText, plan = [], execution }
     execution,
   };
 };
+
+const firstBlockedStep = (plan) =>
+  Array.isArray(plan) ? plan.find((step) => step.requires_input) || null : null;
 
 const seededMessages = initialMessages.map(normalizeMessage);
 const seededSessions = initialSessions.map(normalizeSession);
@@ -452,6 +476,7 @@ export const useAppStore = create(
 
       login: async ({ email, name, password, mode = "local" }) => {
         setRuntimeAuthToken(null);
+        await pendingLogoutRequest.catch(() => {});
         const cleanEmail = (email || "").trim().toLowerCase();
         const cleanName = (name || "").trim();
         const displayName =
@@ -459,13 +484,15 @@ export const useAppStore = create(
           cleanEmail.split("@")[0]?.replace(/[._-]+/g, " ") ||
           "Owner";
 
-        // Try backend JWT auth first
-        let token = null;
+        // Protected backend routes require a JWT, so do not enter the app
+        // unless the backend login succeeds.
+        let token;
         try {
           const response = await fetch(
             `${getAuthBaseUrl()}/auth/login`,
             {
               method: "POST",
+              credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ email: cleanEmail, password: password || "local", name: displayName }),
             }
@@ -475,9 +502,17 @@ export const useAppStore = create(
             token = data.token || null;
             setRuntimeAuthToken(token);
             console.log("[Auth] Backend JWT acquired");
+          } else {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Backend login failed");
           }
-        } catch {
-          console.warn("[Auth] Backend auth unavailable, using local-only session");
+        } catch (error) {
+          setRuntimeAuthToken(null);
+          throw new Error(error.message || "Backend auth unavailable", { cause: error });
+        }
+
+        if (!token) {
+          throw new Error("Backend login did not return an auth token");
         }
 
         set({
@@ -497,6 +532,12 @@ export const useAppStore = create(
 
       logout: () => {
         setRuntimeAuthToken(null);
+        pendingLogoutRequest = fetch(`${getAuthBaseUrl()}/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        }).catch(() => {
+          // Local logout should still complete if the server is unavailable.
+        });
         set({
           auth: defaultAuth,
           currentPlan: null,
@@ -524,7 +565,7 @@ export const useAppStore = create(
         if (!clean || get().isLoading) return;
         const pendingClarification = get().pendingClarification;
         const existingPlan = get().currentPlan;
-        const effectiveText = pendingClarification
+        const effectiveText = pendingClarification && pendingClarification.type !== "blocked_step"
           ? `${pendingClarification.originalText}\n\nClarification answer: ${clean}`
           : clean;
         const casualReply = getCasualReply(clean);
@@ -542,6 +583,48 @@ export const useAppStore = create(
             error: null,
           }));
           get().approvePlan();
+          return;
+        }
+
+        if (pendingClarification?.type === "blocked_step" && existingPlan?.length) {
+          const blockedStepId = pendingClarification.stepId;
+          const blockedStep = existingPlan.find((step) => step.id === blockedStepId) || firstBlockedStep(existingPlan);
+
+          set((state) => ({
+            messages: [...state.messages, userMsg],
+            currentPlan: state.currentPlan?.map((step) =>
+              step.id === blockedStep?.id
+                ? {
+                    ...step,
+                    requires_input: false,
+                    user_input: clean,
+                    description: `${step.description || "Complete this step"} Answer: ${clean}`,
+                  }
+                : step
+            ),
+            pendingClarification: null,
+            error: null,
+            planApproved: false,
+          }));
+
+          get().addMessage({
+            role: "assistant",
+            text: "Got it. I added that answer to the blocked step.",
+            content: "Got it. I added that answer to the blocked step.",
+            type: "plan_updated",
+            timestamp: Date.now(),
+          });
+
+          const runnableIds = (get().currentPlan || [])
+            .filter((step) => !step.requires_input)
+            .map((step) => step.id);
+
+          if (runnableIds.length) {
+            await get().approvePlan(runnableIds);
+          } else {
+            set({ isLoading: false, loadingStage: null });
+            get()._snapshotSession();
+          }
           return;
         }
 
@@ -671,6 +754,65 @@ export const useAppStore = create(
             throw new Error("The backend did not return a usable plan.");
           }
 
+          const explicitBuild = isExplicitBuildRequest(effectiveText) || isExplicitBuildRequest(intent.goal);
+
+          if (explicitBuild) {
+            get().addMessage({
+              role: "assistant",
+              text: "Building it now. I'll use sensible defaults and put the result in the preview.",
+              content: "Building it now. I'll use sensible defaults and put the result in the preview.",
+              type: "autopilot",
+              timestamp: Date.now(),
+            });
+
+            set({
+              currentPlan: plan,
+              activeModule: intent.module,
+              previewArtifact: createPreviewArtifact({
+                intent,
+                sourceText: clean,
+                plan,
+                status: "building",
+              }),
+              isLoading: true,
+              loadingStage: "execute",
+            });
+
+            const runnableIds = plan
+              .filter((step) => !step.requires_input)
+              .map((step) => step.id);
+            if (!runnableIds.length) {
+              const blockedStep = firstBlockedStep(plan);
+              set({
+                isLoading: false,
+                loadingStage: null,
+                pendingClarification: blockedStep
+                  ? {
+                      type: "blocked_step",
+                      stepId: blockedStep.id,
+                    }
+                  : null,
+                previewArtifact: createPreviewArtifact({
+                  intent,
+                  sourceText: clean,
+                  plan,
+                  status: "planned",
+                }),
+              });
+              get().addMessage({
+                role: "assistant",
+                text: "I need your answer before I can run this plan.",
+                content: "I need your answer before I can run this plan.",
+                type: "approval_required",
+                timestamp: Date.now(),
+              });
+              get()._snapshotSession();
+              return;
+            }
+            await get().approvePlan(runnableIds);
+            return;
+          }
+
           const planIntro = humanPlanIntro(plan, intent);
 
           get().addMessage({
@@ -681,7 +823,7 @@ export const useAppStore = create(
             timestamp: Date.now(),
           });
 
-          const approvalRequired = needsCodingApproval(plan, intent);
+          const approvalRequired = needsCodingApproval(plan, intent) && !explicitBuild;
 
           set({
             currentPlan: plan,
@@ -718,7 +860,10 @@ export const useAppStore = create(
             });
 
             setTimeout(() => {
-              get().approvePlan();
+              const runnableIds = plan
+                .filter((step) => !step.requires_input)
+                .map((step) => step.id);
+              get().approvePlan(runnableIds);
             }, 500);
           }
         } catch (error) {
@@ -758,8 +903,28 @@ export const useAppStore = create(
         const fullPlan = get().currentPlan;
         const plan = selectedStepIds?.length
           ? fullPlan?.filter((step) => selectedStepIds.includes(step.id))
-          : fullPlan;
-        if (!plan?.length) return;
+          : fullPlan?.filter((step) => !step.requires_input);
+        if (!plan?.length) {
+          const blockedStep = firstBlockedStep(fullPlan);
+          set({ isLoading: false, loadingStage: null });
+          if (blockedStep) {
+            set({
+              pendingClarification: {
+                type: "blocked_step",
+                stepId: blockedStep.id,
+              },
+            });
+          }
+          get().addMessage({
+            role: "assistant",
+            text: "There are no runnable steps yet. Answer the blocked step first and I can continue.",
+            content: "There are no runnable steps yet. Answer the blocked step first and I can continue.",
+            type: "approval_required",
+            timestamp: Date.now(),
+          });
+          get()._snapshotSession();
+          return;
+        }
 
         set({ isLoading: true, loadingStage: "execute", error: null });
 
@@ -1011,7 +1176,7 @@ export const useAppStore = create(
           sttMode: settings.sttMode,
           messages: (state.messages || seededMessages).map(normalizeMessage),
           sessions: (state.sessions || seededSessions).map(normalizeSession),
-          auth: {
+          auth: state.auth?.isAuthenticated ? defaultAuth : {
             ...defaultAuth,
             ...(state.auth || {}),
             token: null,

@@ -176,12 +176,13 @@ function StepIndicator({ plan, loadingStage }) {
 function PreviewPanel({ previewArtifact, isLoading }) {
   const [activeTab, setActiveTab] = useState("preview");
   const [tipIndex, setTipIndex] = useState(0);
+  const previewBusy = isLoading || previewArtifact?.status === "building";
 
   useEffect(() => {
-    if (!isLoading) return;
+    if (!previewBusy) return;
     const iv = setInterval(() => setTipIndex((i) => (i + 1) % generatingTips.length), 5000);
     return () => clearInterval(iv);
-  }, [isLoading]);
+  }, [previewBusy]);
 
   const previewUrl = previewArtifact?.previewUrl || previewArtifact?.previewFile;
   const hasPreview = Boolean(previewUrl);
@@ -232,7 +233,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === "preview" ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-            {isLoading ? (
+            {previewBusy ? (
               /* ── Generating state ── */
               <div className="flex w-full max-w-2xl flex-col items-center px-6 py-8">
                 <p className="mb-1 text-xs text-aqua/70">NOVA is building</p>
@@ -264,7 +265,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
                 </div>
               </div>
             ) : hasPreview ? (
-              <iframe src={previewUrl} title="App Preview" className="h-full w-full border-0" sandbox="allow-scripts allow-same-origin allow-forms" />
+              <iframe key={previewUrl} src={previewUrl} title="App Preview" className="h-full w-full border-0" sandbox="allow-scripts allow-same-origin allow-forms" />
             ) : (
               <div className="flex flex-col items-center gap-3 px-6 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand">

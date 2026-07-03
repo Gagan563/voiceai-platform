@@ -17,6 +17,21 @@ function userRoom(userId) {
   return `user:${userId}`;
 }
 
+function readCookie(header, name) {
+  if (!header || typeof header !== "string") return null;
+  const match = header
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  if (!match) return null;
+
+  try {
+    return decodeURIComponent(match.slice(name.length + 1));
+  } catch {
+    return null;
+  }
+}
+
 function emitToUser(io, userId, event, payload) {
   if (!io || !userId) return;
   io.to(userRoom(userId)).emit(event, payload);
@@ -37,6 +52,7 @@ function initializeSocket(httpServer) {
     cors: {
       origin: config.CORS_ORIGINS,
       methods: ["GET", "POST"],
+      credentials: true,
     },
     path: config.SOCKET_PATH,
   });
@@ -46,9 +62,9 @@ function initializeSocket(httpServer) {
     const secret = getJwtSecret();
     if (!secret) return next(new Error("JWT_SECRET not configured"));
 
-    const token = socket.handshake.auth?.token;
+    const token = socket.handshake.auth?.token || readCookie(socket.handshake.headers?.cookie, "nova_auth");
     if (!token) {
-      return next(new Error("Authentication required — send token via auth.token"));
+      return next(new Error("Authentication required"));
     }
 
     try {

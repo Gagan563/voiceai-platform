@@ -58,6 +58,7 @@ export default function useStreaming() {
       const response = await fetch(url, {
         method: "POST",
         signal: controller.signal,
+        credentials: "include",
         headers: getStreamingHeaders(),
         body: JSON.stringify({ text }),
       });

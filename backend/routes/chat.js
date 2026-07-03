@@ -30,6 +30,7 @@ function currentUserId(req) {
 
 function inferModuleFromText(text = "") {
   const value = text.toLowerCase();
+  if (isAppBuildRequest(value)) return "write";
   const rules = [
     ["health", /(health|symptom|medicine|medication|water|sleep|mood|exercise|bmi|calorie|doctor)/],
     ["finance", /(finance|expense|income|budget|spending|bill|currency|money|invoice)/],
@@ -56,6 +57,14 @@ function inferActionType(text = "") {
   if (/(turn on|turn off|control|thermostat|light)/.test(value)) return "control";
   if (/(write|draft|create|generate|make|build)/.test(value)) return "create";
   return "answer";
+}
+
+function isAppBuildRequest(text = "") {
+  const value = String(text || "").toLowerCase();
+  return (
+    /\b(build|create|make|generate|develop)\b/.test(value) &&
+    /\b(app|application|website|web app|dashboard|preview|prototype|page|site|game)\b/.test(value)
+  );
 }
 
 function confidenceNumber(value, fallback = 0.72) {
@@ -140,6 +149,14 @@ function fallbackPlan(intent = {}) {
   const module = intent.module || inferModuleFromText(intent.goal || "");
   const goal = intent.goal || "Complete the request";
 
+  if (isAppBuildRequest(goal)) {
+    return [
+      { step: 1, action: "define_default_app_scope", description: `Use sensible defaults and define the app scope for: ${goal}`, service: "ai", requires_input: false, estimated_duration_seconds: 2, fallback: "Build a clean default version and let the user refine it afterward" },
+      { step: 2, action: "generate_preview_app", description: "Create a complete runnable HTML/CSS/JS app with useful default data and interactions", service: "filesystem", requires_input: false, estimated_duration_seconds: 8, fallback: "Create a single-file HTML preview if a larger scaffold is not needed" },
+      { step: 3, action: "preview_app", description: "Open the generated app in the preview panel", service: "filesystem", requires_input: false, estimated_duration_seconds: 2, fallback: "Return the generated file path for manual preview" },
+    ];
+  }
+
   return [
     { step: 1, action: "parse_request", description: `Read the request and decide the most useful next move: ${goal}`, service: "ai", requires_input: false, estimated_duration_seconds: 2, fallback: "Make a reasonable assumption and mention what can be corrected later" },
     { step: 2, action: `prepare_${module}_result`, description: `Prepare a useful ${module} result without unnecessary back-and-forth`, service: module === "search" ? "web" : "ai", requires_input: false, estimated_duration_seconds: 4, fallback: "Save a clear note so the user can follow up without starting over" },
@@ -178,6 +195,10 @@ async function extractIntentForText(text, userId = config.DEFAULT_USER_ID) {
 }
 
 async function generatePlanForIntent(intent = {}) {
+  if (isAppBuildRequest(intent.goal || "")) {
+    return enrichPlanSteps(fallbackPlan(intent), intent);
+  }
+
   const plan = await ai.chatJSON(PLAN_GENERATION_PROMPT, JSON.stringify(intent));
   const planArray = Array.isArray(plan) ? plan : plan.plan || plan.steps || [];
   return enrichPlanSteps(planArray, intent);
@@ -415,7 +436,7 @@ router.post("/plan", async (req, res) => {
     console.log("[Plan] Generating plan");
     const planArray = await generatePlanForIntent(intent);
 
-    res.json({ success: true, plan: planArray, total_steps: planArray.length, metadata: { engine: "gemini" } });
+    res.json({ success: true, plan: planArray, total_steps: planArray.length, metadata: { engine: "ai_router" } });
   } catch (error) {
     console.error("[Plan] Error:", errorMessage(error));
     const planArray = enrichPlanSteps(fallbackPlan(req.body?.intent), req.body?.intent);
@@ -533,17 +554,37 @@ router.post("/execute", async (req, res) => {
     const results = [];
     let agentResult = null;
 
-    if (shouldRunAgent(plan)) {
-      agentResult = await runAgent({
-        input: planToAgentInput(plan),
-        userId,
-        onStep: (step) => {
-          emitToUser(io, userId, "execution:step", { execution_id: executionId, ...step });
-        },
-      });
+    const runAgentForPlan = shouldRunAgent(plan);
+    if (runAgentForPlan) {
+      try {
+        agentResult = await runAgent({
+          input: planToAgentInput(plan),
+          userId,
+          onStep: (step) => {
+            emitToUser(io, userId, "execution:step", { execution_id: executionId, ...step });
+          },
+        });
+      } catch (error) {
+        agentResult = {
+          success: false,
+          summary: "The autonomous build agent could not complete this run.",
+          error: errorMessage(error),
+          preview_file: null,
+          steps: [],
+        };
+        results.push({
+          step: 0,
+          step_id: "agent",
+          status: "failed",
+          message: agentResult.error,
+        });
+        console.warn("[Execute] Agent fallback:", agentResult.error);
+      }
     }
 
-    const execution = await executePlanBatches(plan, userId);
+    const execution = agentResult?.success === false
+      ? { results: [], batches: [] }
+      : await executePlanBatches(plan, userId);
     results.push(...execution.results);
 
     const failed = results.filter((step) => step.status === "failed");

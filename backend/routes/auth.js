@@ -8,6 +8,25 @@ const config = require("../config");
 
 const router = express.Router();
 
+function setAuthCookie(res, token) {
+  res.cookie("nova_auth", token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: config.isProduction(),
+    path: "/",
+    maxAge: config.JWT_EXPIRY_SECONDS * 1000,
+  });
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie("nova_auth", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: config.isProduction(),
+    path: "/",
+  });
+}
+
 function cleanCredentials(body = {}) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
@@ -38,6 +57,7 @@ router.post("/login", (req, res) => {
       { id: devId, email, role: "admin" },
       secret
     );
+    setAuthCookie(res, token);
     return res.json({
       token,
       user: { id: devId, email, name: name || email.split("@")[0], role: "admin" },
@@ -75,6 +95,7 @@ router.post("/register", (req, res) => {
       { id, email, role: "user" },
       secret
     );
+    setAuthCookie(res, token);
     return res.json({
       token,
       user: { id, email, name: name || email.split("@")[0], role: "user" },
@@ -82,6 +103,15 @@ router.post("/register", (req, res) => {
   }
 
   return res.status(501).json({ error: "Production registration not yet configured." });
+});
+
+/**
+ * POST /api/auth/logout — clears the auth cookie even if the token is missing
+ * or expired.
+ */
+router.post("/logout", (req, res) => {
+  clearAuthCookie(res);
+  res.json({ success: true });
 });
 
 /**

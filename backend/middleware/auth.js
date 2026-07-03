@@ -72,9 +72,39 @@ function errorMessage(error, fallback = "Unexpected error") {
  * Express middleware — checks Authorization: Bearer <token>
  * Skips auth for health, login, and public routes.
  */
+function readCookie(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader || typeof cookieHeader !== "string") return null;
+
+  const match = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+
+  if (!match) return null;
+
+  try {
+    return decodeURIComponent(match.slice(name.length + 1));
+  } catch {
+    return null;
+  }
+}
+
+function getRequestToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+
+  const cookieToken = readCookie(req, "nova_auth");
+  if (cookieToken) return cookieToken;
+
+  return null;
+}
+
 function authMiddleware(req, res, next) {
   // Public routes that don't need auth
-  const publicPaths = ["/health", "/api/auth/login", "/api/auth/register"];
+  const publicPaths = ["/health", "/api/auth/login", "/api/auth/register", "/api/auth/logout"];
   if (publicPaths.some((p) => req.path.startsWith(p))) {
     return next();
   }
@@ -82,13 +112,12 @@ function authMiddleware(req, res, next) {
   const secret = requireJwtSecret(res);
   if (!secret) return;
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
+  const token = getRequestToken(req);
+  if (!token) {
     return res.status(401).json({ error: "Missing authorization token" });
   }
 
   try {
-    const token = authHeader.slice(7);
     req.user = verifyToken(token, secret);
     next();
   } catch (err) {

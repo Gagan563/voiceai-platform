@@ -21,9 +21,14 @@ export function setRuntimeAuthToken(token) {
   runtimeAuthToken = typeof token === "string" && token ? token : null;
 }
 
+function getAuthToken() {
+  return runtimeAuthToken;
+}
+
 export const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
+  withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -42,8 +47,9 @@ apiClient.interceptors.request.use((config) => {
     // Persisted settings are optional.
   }
 
-  if (runtimeAuthToken) {
-    config.headers["Authorization"] = `Bearer ${runtimeAuthToken}`;
+  const token = getAuthToken();
+  if (token) {
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
 
   return config;
@@ -105,7 +111,8 @@ export function getStreamingHeaders() {
     // Persisted settings are optional.
   }
 
-  if (runtimeAuthToken) headers.Authorization = `Bearer ${runtimeAuthToken}`;
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 

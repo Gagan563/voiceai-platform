@@ -148,6 +148,7 @@ app.get("/status", (req, res) => {
   const connectors = listConnectors();
   const requiredKeys = {
     whisper: config.isOpenAIConfigured(),
+    groq: Boolean(config.GROQ_API_KEY),
     gemini: Boolean(config.GEMINI_API_KEY),
     anthropic: Boolean(config.ANTHROPIC_API_KEY),
     elevenlabs: config.isElevenLabsConfigured(),
@@ -444,6 +445,7 @@ app.get("/agent/output/*", (req, res) => {
   };
 
   res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   res.sendFile(resolved);
 });
 

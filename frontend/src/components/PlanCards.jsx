@@ -57,6 +57,7 @@ function StepCard({ step, index, selected, onToggle }) {
   const confidence = Number.isFinite(Number(step.confidence))
     ? Math.round(Number(step.confidence) * 100)
     : null;
+  const needsInput = Boolean(step.requires_input);
 
   return (
     <motion.div
@@ -76,22 +77,28 @@ function StepCard({ step, index, selected, onToggle }) {
           tabIndex={0}
           onClick={(event) => {
             event.stopPropagation();
+            if (needsInput) return;
             onToggle(step.id);
           }}
           onKeyDown={(event) => {
             if (event.key === " " || event.key === "Enter") {
               event.preventDefault();
               event.stopPropagation();
+              if (needsInput) return;
               onToggle(step.id);
             }
           }}
+          aria-disabled={needsInput}
+          title={needsInput ? "This step needs your answer before it can run" : "Toggle this step"}
           className={`grid h-7 w-7 shrink-0 place-items-center rounded border font-mono text-xs transition ${
             selected
               ? "border-leaf/30 bg-leaf text-ink-950"
+              : needsInput
+                ? "border-amber/25 bg-amber/10 text-amber"
               : "border-line bg-white/[0.04] text-text-muted"
           }`}
         >
-          {selected ? <Check className="h-3.5 w-3.5" /> : null}
+          {selected ? <Check className="h-3.5 w-3.5" /> : needsInput ? <Bell className="h-3.5 w-3.5" /> : null}
         </span>
 
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-ink-950/45 font-code text-xs font-semibold text-text-soft">
@@ -144,10 +151,10 @@ function StepCard({ step, index, selected, onToggle }) {
                 {step.description}
               </p>
 
-              {step.requires_input ? (
+              {needsInput ? (
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-semibold text-amber">
                   <Bell className="h-3 w-3" />
-                  Needs input
+                  Needs your answer
                 </div>
               ) : null}
 
@@ -178,6 +185,9 @@ export default function PlanCards() {
   const approvePlan = useAppStore((s) => s.approvePlan);
   const cancelPlan = useAppStore((s) => s.cancelPlan);
   const planKey = (currentPlan || []).map((step) => step.id).join("|");
+  const runnableStepIds = (currentPlan || [])
+    .filter((step) => !step.requires_input)
+    .map((step) => step.id);
   const [selection, setSelection] = useState(() => ({
     planKey: "",
     ids: new Set(),
@@ -186,7 +196,7 @@ export default function PlanCards() {
   const selectedIds =
     selection.planKey === planKey
       ? selection.ids
-      : new Set((currentPlan || []).map((step) => step.id));
+      : new Set(runnableStepIds);
 
   if (!currentPlan?.length) return null;
 
@@ -195,7 +205,7 @@ export default function PlanCards() {
       const base =
         current.planKey === planKey
           ? current.ids
-          : new Set((currentPlan || []).map((step) => step.id));
+          : new Set(runnableStepIds);
       const next = new Set(base);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -204,6 +214,7 @@ export default function PlanCards() {
   };
 
   const selectedCount = selectedIds.size;
+  const needsInputCount = currentPlan.filter((step) => step.requires_input).length;
   const selectedDuration = currentPlan
     .filter((step) => selectedIds.has(step.id))
     .reduce((sum, step) => sum + (step.estimated_duration_seconds || 0), 0);
@@ -232,13 +243,18 @@ export default function PlanCards() {
                 </div>
                 <div>
                   <h2 className="font-display text-sm font-semibold text-text">
-                    What NOVA did
+                    Review plan
                   </h2>
                   <p className="mt-0.5 text-xs font-medium text-text-muted">
-                    {selectedCount}/{currentPlan.length} selected, about {selectedDuration || totalDuration}s
+                    {selectedCount} runnable step{selectedCount === 1 ? "" : "s"} selected, about {selectedDuration || totalDuration}s
                   </p>
                 </div>
               </div>
+              {needsInputCount > 0 ? (
+                <p className="mt-3 max-w-xl text-xs leading-relaxed text-text-muted">
+                  {needsInputCount} step{needsInputCount === 1 ? "" : "s"} need your answer, so they are not selected for execution.
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
@@ -288,12 +304,12 @@ export default function PlanCards() {
               {executing ? (
                 <>
                   <Clock3 className="h-4 w-4 animate-spin" />
-                  Executing
+                  Running
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="h-4 w-4" />
-                  Approve selected
+                  Run selected
                 </>
               )}
             </motion.button>

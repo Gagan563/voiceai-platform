@@ -1,7 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
+
+const backendTarget = process.env.VITE_BACKEND_TARGET || "http://127.0.0.1:3001";
 
 export default defineConfig({
   base: "./",
@@ -14,8 +17,16 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      "/health": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/api/auth": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
       "/api": {
-        target: "http://localhost:3001",
+        target: backendTarget,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

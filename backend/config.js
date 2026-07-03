@@ -5,7 +5,9 @@
 // All environment variables and defaults are read here once.
 // Import this module instead of reading process.env inline.
 
-require("dotenv").config();
+const path = require("path");
+
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 // ── Helpers ──
 
@@ -63,6 +65,10 @@ const AI_CIRCUIT_RESET_MS = envInt("AI_CIRCUIT_RESET_MS", 60_000);
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3-32b";
+const GROQ_BASE_URL = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
@@ -161,6 +167,9 @@ module.exports = {
   AI_CIRCUIT_RESET_MS,
   GEMINI_API_KEY,
   GEMINI_MODEL,
+  GROQ_API_KEY,
+  GROQ_MODEL,
+  GROQ_BASE_URL,
   ANTHROPIC_API_KEY,
   ANTHROPIC_MODEL,
   ANTHROPIC_API_VERSION,

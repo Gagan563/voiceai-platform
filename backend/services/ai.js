@@ -53,7 +53,7 @@ function recordFailure(provider, error) {
 
 function providerStatus() {
   return Object.fromEntries(
-    ["gemini", "anthropic"].map((provider) => {
+    ["groq", "gemini", "anthropic"].map((provider) => {
       const breaker = breakerFor(provider);
       return [
         provider,
@@ -69,6 +69,9 @@ function providerStatus() {
 }
 
 function isProviderConfigured(provider) {
+  if (provider === "groq") {
+    return Boolean(config.GROQ_API_KEY && config.GROQ_API_KEY.length > 10);
+  }
   if (provider === "gemini") {
     return Boolean(config.GEMINI_API_KEY && config.GEMINI_API_KEY.length > 10);
   }
@@ -82,12 +85,13 @@ function providerOrder(options = {}) {
   if (options.provider) return [options.provider];
 
   const mode = config.AI_ROUTER_MODE;
-  if (mode === "gemini") return ["gemini", "anthropic"];
-  if (mode === "anthropic") return ["anthropic", "gemini"];
+  if (mode === "groq") return ["groq", "gemini", "anthropic"];
+  if (mode === "gemini") return ["gemini", "groq", "anthropic"];
+  if (mode === "anthropic") return ["anthropic", "groq", "gemini"];
 
   const task = options.task || "general";
   const needsDeepReasoning = task === "agent" || task === "code" || options.maxTokens > 4096;
-  return needsDeepReasoning ? ["anthropic", "gemini"] : ["gemini", "anthropic"];
+  return needsDeepReasoning ? ["gemini", "anthropic", "groq"] : ["gemini", "groq", "anthropic"];
 }
 
 function getGeminiModel() {
@@ -180,6 +184,80 @@ async function callGeminiMultiTurn(systemPrompt, messages, options = {}) {
   return result.response.text();
 }
 
+async function callGroq(systemPrompt, userMessage, options = {}) {
+  return callGroqMessages(
+    systemPrompt,
+    [{ role: "user", content: userMessage }],
+    options
+  );
+}
+
+async function callGroqMultiTurn(systemPrompt, messages, options = {}) {
+  return callGroqMessages(systemPrompt, messages, {
+    ...options,
+    maxTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.multiTurn,
+  });
+}
+
+async function callGroqMessages(systemPrompt, messages, options = {}) {
+  const apiKey = config.GROQ_API_KEY;
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error("GROQ_API_KEY not configured in .env");
+  }
+
+  const body = {
+    model: options.model || config.GROQ_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...messages.map((msg) => ({
+        role: msg.role === "assistant" || msg.role === "model" ? "assistant" : "user",
+        content: msg.content,
+      })),
+    ],
+    max_tokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.chat,
+    temperature: options.temperature ?? 0.7,
+  };
+
+  if (options.json) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const endpoint = `${config.GROQ_BASE_URL.replace(/\/$/, "")}/chat/completions`;
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  let response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    if (options.json && body.response_format) {
+      const fallbackBody = { ...body };
+      delete fallbackBody.response_format;
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(fallbackBody),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || "";
+      }
+      const retryText = await response.text();
+      throw new Error(`Groq request failed after JSON retry: ${response.status} ${retryText}`);
+    }
+    throw new Error(`Groq request failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
 async function callAnthropic(systemPrompt, userMessage, options = {}) {
   const apiKey = config.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.length < 10) {
@@ -266,7 +344,12 @@ async function routeCall(callType, systemPrompt, payload, options = {}) {
 
     try {
       let text;
-      if (provider === "gemini") {
+      if (provider === "groq") {
+        text =
+          callType === "multi"
+            ? await callGroqMultiTurn(systemPrompt, payload, options)
+            : await callGroq(systemPrompt, payload, options);
+      } else if (provider === "gemini") {
         text =
           callType === "multi"
             ? await callGeminiMultiTurn(systemPrompt, payload, options)
@@ -332,7 +415,7 @@ async function chatImage(systemPrompt, image, prompt, options = {}) {
 }
 
 function isAvailable() {
-  return ["gemini", "anthropic"].some(
+  return ["groq", "gemini", "anthropic"].some(
     (provider) => isProviderConfigured(provider) && !isCircuitOpen(provider)
   );
 }
@@ -469,4 +552,3 @@ module.exports = {
   getModel: getGeminiModel,
   providerStatus,
 };
-
