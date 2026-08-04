@@ -91,6 +91,15 @@ function readCookie(req, name) {
 }
 
 function getRequestToken(req) {
+  // Security: never accept full JWTs from query parameters.
+  // Log a warning so operators notice misconfigured clients or proxies.
+  if (req.query?.token || req.query?.access_token) {
+    console.warn(
+      `[Auth] Rejected token from query parameter on ${req.method} ${req.path}. ` +
+      "Tokens must be sent via Authorization header or httpOnly cookie."
+    );
+  }
+
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     return authHeader.slice(7);
@@ -104,7 +113,7 @@ function getRequestToken(req) {
 
 function authMiddleware(req, res, next) {
   // Public routes that don't need auth
-  const publicPaths = ["/health", "/api/auth/login", "/api/auth/register", "/api/auth/logout"];
+  const publicPaths = ["/health", "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/session", "/api/auth/refresh"];
   if (publicPaths.some((p) => req.path.startsWith(p))) {
     return next();
   }
@@ -121,8 +130,25 @@ function authMiddleware(req, res, next) {
     req.user = verifyToken(token, secret);
     next();
   } catch (err) {
-    return res.status(401).json({ error: `Auth failed: ${errorMessage(err)}` });
+    // Return a uniform message — never leak internal token details to clients.
+    console.warn(`[Auth] Token verification failed on ${req.path}: ${errorMessage(err)}`);
+    return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
 
-module.exports = { signToken, verifyToken, authMiddleware, getJwtSecret, requireJwtSecret };
+// Refresh tokens are longer-lived (7 days) and stored in a separate cookie.
+const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
+
+function signRefreshToken(payload, secret) {
+  return signToken(payload, secret, REFRESH_TOKEN_EXPIRY);
+}
+
+module.exports = {
+  signToken,
+  signRefreshToken,
+  verifyToken,
+  authMiddleware,
+  getJwtSecret,
+  requireJwtSecret,
+  REFRESH_TOKEN_EXPIRY,
+};

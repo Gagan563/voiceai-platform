@@ -47,6 +47,24 @@ const serviceMeta = {
   web: { icon: Globe2, className: "border-brand/25 bg-brand/10 text-brand" },
 };
 
+function ConfidenceBar({ value }) {
+  const pct = Math.round((value || 0) * 100);
+  const color = pct >= 80 ? "bg-leaf" : pct >= 55 ? "bg-amber" : "bg-coral";
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <div className="h-1.5 flex-1 rounded-full bg-white/[0.06]">
+        <div
+          className={`h-full rounded-full ${color} transition-all duration-500`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`font-code text-[10px] tabular-nums ${pct >= 80 ? "text-leaf" : pct >= 55 ? "text-amber" : "text-coral"}`}>
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
 function StepCard({ step, index, selected, onToggle }) {
   const [expanded, setExpanded] = useState(index === 0);
   const meta = serviceMeta[step.service] || {
@@ -110,6 +128,11 @@ function StepCard({ step, index, selected, onToggle }) {
             <span className="truncate text-sm font-semibold text-text">
               {(step.action || "action").replace(/_/g, " ")}
             </span>
+            {step.parallel_group && (
+              <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-aqua/25 bg-aqua/10 px-1.5 py-0.5 text-[10px] font-bold text-aqua">
+                ∥ {step.parallel_group}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-text-muted">
             <span
@@ -122,12 +145,8 @@ function StepCard({ step, index, selected, onToggle }) {
               <Clock3 className="h-3 w-3" />
               {step.estimated_duration_seconds || 0}s
             </span>
-            {confidence !== null ? (
-              <span className="font-code text-[11px] text-text-muted">
-                {confidence}% sure
-              </span>
-            ) : null}
           </div>
+          {confidence !== null && <ConfidenceBar value={step.confidence} />}
         </div>
 
         {expanded ? (
@@ -154,15 +173,11 @@ function StepCard({ step, index, selected, onToggle }) {
               {needsInput ? (
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/25 bg-amber/10 px-2 py-1 text-[11px] font-semibold text-amber">
                   <Bell className="h-3 w-3" />
-                  Needs your answer
+                  Needs an answer
                 </div>
               ) : null}
 
-              {step.parallel_group ? (
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-aqua/25 bg-aqua/10 px-2 py-1 text-[11px] font-semibold text-aqua">
-                  Parallel: {step.parallel_group}
-                </div>
-              ) : null}
+              {step.parallel_group ? null : null /* shown in header now */}
 
               {step.fallback ? (
                 <div className="flex items-start gap-2 rounded-lg border border-line bg-ink-950/35 p-2 text-[11px] leading-relaxed text-text-muted">
@@ -218,11 +233,6 @@ export default function PlanCards() {
   const selectedDuration = currentPlan
     .filter((step) => selectedIds.has(step.id))
     .reduce((sum, step) => sum + (step.estimated_duration_seconds || 0), 0);
-
-  const totalDuration = currentPlan.reduce(
-    (sum, step) => sum + (step.estimated_duration_seconds || 0),
-    0
-  );
   const executing = isLoading && loadingStage === "execute";
 
   return (
@@ -246,7 +256,9 @@ export default function PlanCards() {
                     Review plan
                   </h2>
                   <p className="mt-0.5 text-xs font-medium text-text-muted">
-                    {selectedCount} runnable step{selectedCount === 1 ? "" : "s"} selected, about {selectedDuration || totalDuration}s
+                    {selectedCount === 0
+                      ? "No runnable steps selected"
+                      : `${selectedCount} runnable step${selectedCount === 1 ? "" : "s"} selected, about ${selectedDuration}s`}
                   </p>
                 </div>
               </div>

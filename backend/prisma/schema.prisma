@@ -18,8 +18,14 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memories Memory[]
-  sessions Session[]
+  memories          Memory[]
+  sessions          Session[]
+  tasks             Task[]
+  moodLogs          MoodLog[]
+  financeRecords    FinanceRecord[]
+  emergencyContacts EmergencyContact[]
+  generatedDocs     GeneratedDocument[]
+  moduleRecords     ModuleRecord[]
 
   @@map("users")
 }
@@ -98,4 +104,118 @@ model Execution {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("executions")
+}
+
+// ══════════════════════════════════════════
+//  MODULE DATA MODELS
+// ══════════════════════════════════════════
+
+// ── Task (todo / kanban) ──
+model Task {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  title       String
+  description String?
+  status      String    @default("todo")       // todo | in_progress | done
+  priority    String    @default("medium")      // low | medium | high | urgent
+  dueAt       DateTime? @map("due_at")
+  completedAt DateTime? @map("completed_at")
+  tags        Json?                             // ["work", "personal", ...]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("tasks")
+}
+
+// ── MoodLog (wellness check-in) ──
+model MoodLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  mood      Int                                 // 1-10 scale
+  note      String?
+  metrics   Json?                               // { sleep, water, exercise, ... }
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@map("mood_logs")
+}
+
+// ── FinanceRecord (income / expense tracking) ──
+model FinanceRecord {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  type        String                            // income | expense
+  amount      Float
+  currency    String   @default("USD")
+  category    String?
+  description String?
+  date        DateTime @default(now())
+  recurring   Boolean  @default(false)
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, date])
+  @@map("finance_records")
+}
+
+// ── EmergencyContact ──
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  name         String
+  phone        String
+  relationship String?
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("emergency_contacts")
+}
+
+// ── GeneratedDocument (legal, letters, reports) ──
+model GeneratedDocument {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String                              // legal | letter | report | prd
+  title     String
+  content   String
+  country   String?
+  language  String?  @default("en")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("generated_documents")
+}
+
+// ── ModuleRecord (generic per-module data) ──
+model ModuleRecord {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  module    String                              // chat | health | finance | ...
+  title     String
+  data      Json?
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, module])
+  @@map("module_records")
 }

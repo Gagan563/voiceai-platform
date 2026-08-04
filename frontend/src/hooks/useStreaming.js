@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from "react";
 import { getStreamingHeaders } from "@/api/client";
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "/api";
+const STREAM_TIMEOUT_MS = 45_000; // 45 seconds — covers slow Gemini cold starts
 
 /**
  * useStreaming — sends a text query to the SSE endpoint
@@ -22,8 +23,17 @@ export default function useStreaming() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const controllerRef = useRef(null);
+  const timeoutRef = useRef(null);
+
+  const clearStreamTimeout = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
 
   const abort = useCallback(() => {
+    clearStreamTimeout();
     if (controllerRef.current) {
       controllerRef.current.abort();
       controllerRef.current = null;
@@ -54,6 +64,15 @@ export default function useStreaming() {
 
     let fullText = "";
 
+    // Set a hard timeout so slow/stalled backends don't hang indefinitely
+    timeoutRef.current = setTimeout(() => {
+      console.warn("[useStreaming] Timeout — aborting stream after", STREAM_TIMEOUT_MS, "ms");
+      controller.abort();
+      setIsStreaming(false);
+      const err = new Error("Stream timed out. The AI is taking too long — please try again.");
+      onError?.(err);
+    }, STREAM_TIMEOUT_MS);
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -64,7 +83,7 @@ export default function useStreaming() {
       });
 
       if (!response.ok) {
-        throw new Error(`Stream failed: ${response.status}`);
+        throw new Error(`Stream failed: ${response.status} ${response.statusText}`);
       }
 
       const reader = response.body.getReader();
@@ -74,6 +93,15 @@ export default function useStreaming() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // Reset the timeout on every chunk received
+        clearStreamTimeout();
+        timeoutRef.current = setTimeout(() => {
+          console.warn("[useStreaming] Mid-stream timeout — no data for 30s");
+          controller.abort();
+          setIsStreaming(false);
+          onError?.(new Error("Stream stalled — no data received for 30 seconds."));
+        }, 30_000);
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -99,6 +127,7 @@ export default function useStreaming() {
           }
 
           if (data.type === "done") {
+            clearStreamTimeout();
             setIsStreaming(false);
             onDone?.(fullText);
             return fullText;
@@ -111,12 +140,14 @@ export default function useStreaming() {
       }
 
       // Stream ended without explicit "done" event
+      clearStreamTimeout();
       setIsStreaming(false);
       onDone?.(fullText);
       return fullText;
     } catch (err) {
+      clearStreamTimeout();
       if (err.name === "AbortError") {
-        // User cancelled — not an error
+        // User cancelled or timeout fired — not a hard error
         setIsStreaming(false);
         return fullText;
       }

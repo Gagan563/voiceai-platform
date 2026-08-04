@@ -4,11 +4,12 @@
 const config = require("../config");
 
 const required = {
-  production: ["GEMINI_API_KEY", "JWT_SECRET", "DATABASE_URL"],
-  development: ["GEMINI_API_KEY"],
+  production: ["JWT_SECRET", "DATABASE_URL"],
+  development: [],
 };
 
 const warnings = [
+  "GEMINI_API_KEY",
   "OPENAI_API_KEY",
   "ELEVENLABS_API_KEY",
 ];
@@ -19,7 +20,7 @@ function validateEnv() {
   const missing = requiredVars.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
-    console.error(`\n❌  Missing required environment variables (${env}):`);
+    console.error(`\n  Missing required environment variables (${env}):`);
     missing.forEach((key) => console.error(`   • ${key}`));
 
     if (env === "production") {
@@ -42,7 +43,7 @@ function validateEnv() {
     env === "production" &&
     process.env.JWT_SECRET === config.JWT_SECRET_PLACEHOLDER
   ) {
-    console.error("❌  JWT_SECRET is still the default placeholder. Set a real secret.");
+    console.error(" JWT_SECRET is still the default placeholder. Set a real secret.");
     process.exit(1);
   }
 }

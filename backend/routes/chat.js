@@ -14,6 +14,7 @@ const { emitToUser } = require("../socket");
 const {
   createReminderFromStep,
 } = require("../services/reminders");
+const { registry: skillRegistry } = require("../services/skills");
 const config = require("../config");
 
 const router = express.Router();
@@ -50,12 +51,16 @@ function inferModuleFromText(text = "") {
 
 function inferActionType(text = "") {
   const value = text.toLowerCase();
+  // Check specific types first before the broad "create" fallback.
   if (/(schedule|meeting|calendar|book)/.test(value)) return "schedule";
   if (/(remind|reminder|notify)/.test(value)) return "remind";
   if (/(search|research|find|look up|latest)/.test(value)) return "search";
   if (/(translate|language)/.test(value)) return "translate";
   if (/(turn on|turn off|control|thermostat|light)/.test(value)) return "control";
-  if (/(write|draft|create|generate|make|build)/.test(value)) return "create";
+  // Only return "create" when it is a genuine app/content build request,
+  // not a generic "create a reminder" or "make a list".
+  if (isAppBuildRequest(value)) return "create";
+  if (/(write|draft|generate)/.test(value)) return "create";
   return "answer";
 }
 
@@ -230,12 +235,65 @@ function isReminderStep(step) {
   );
 }
 
-async function executePlanStep(step, index, userId) {
+async function executePlanStep(step, index, userId, intent) {
   const text = stepText(step);
 
   if (step.requires_input) {
     return { step: index + 1, step_id: step.id || null, status: "waiting_for_input", message: "I need your call on this step before I run it." };
   }
+
+  // ── Try skill registry first ──
+  const skillModule = step._module || inferModuleFromText(step.description || step.action || "");
+  const skillAction = step._action_type || step.action_type || step.action || "";
+  const resolvedSkill = skillRegistry.resolve(skillModule, skillAction);
+
+  if (resolvedSkill && typeof resolvedSkill.handler === "function") {
+    // Gate: skip unconfigured connectors (returns descriptive error)
+    if (typeof resolvedSkill.isConfigured === "function" && !resolvedSkill.isConfigured()) {
+      // Still allow execution — the handler itself will fallback to demo mode
+      // but log it so we know
+      console.log(`[Execute] Skill "${resolvedSkill.id}" not configured, handler may use demo mode`);
+    }
+
+    // Gate: HIGH risk skills that haven't been double-confirmed
+    if (resolvedSkill.riskLevel === "high" && step._skipHighRiskGate !== true) {
+      return {
+        step: index + 1,
+        step_id: step.id || null,
+        status: "requires_confirmation",
+        message: `This action (${resolvedSkill.name}) is high-risk and requires explicit confirmation.`,
+        skill: resolvedSkill.id,
+        riskLevel: resolvedSkill.riskLevel,
+      };
+    }
+
+    try {
+      const skillIntent = intent || {
+        goal: step.description || step.action || "Complete this step",
+        module: skillModule,
+        action_type: skillAction,
+        entities: step.entities || {},
+        spoken_response: step.description,
+      };
+
+      const skillResult = await resolvedSkill.handler(skillIntent, { userId });
+
+      if (skillResult.success) {
+        return {
+          step: index + 1,
+          step_id: step.id || null,
+          status: "completed",
+          message: skillResult.result?.spoken_response || skillResult.result?.content || step.description || "Step completed via skill handler.",
+          result: skillResult.result,
+          skill: resolvedSkill.id,
+        };
+      }
+    } catch (err) {
+      console.warn(`[Execute] Skill "${resolvedSkill.id}" failed, falling back:`, err.message);
+    }
+  }
+
+  // ── Fallback: generic execution logic ──
 
   if (/search|research|web/.test(text)) {
     const searchQuery = step.query || step.description || step.goal || text;
@@ -288,7 +346,7 @@ function buildExecutionBatches(plan) {
   return batches;
 }
 
-async function executePlanBatches(plan, userId) {
+async function executePlanBatches(plan, userId, intent) {
   const batches = buildExecutionBatches(plan);
   const results = new Array(plan.length);
   const batchSummaries = [];
@@ -296,8 +354,8 @@ async function executePlanBatches(plan, userId) {
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
     const settled = batch.length > 1
-      ? await Promise.allSettled(batch.map(({ step, index }) => executePlanStep(step, index, userId)))
-      : [await executePlanStep(batch[0].step, batch[0].index, userId).then(
+      ? await Promise.allSettled(batch.map(({ step, index }) => executePlanStep(step, index, userId, intent)))
+      : [await executePlanStep(batch[0].step, batch[0].index, userId, intent).then(
           (value) => ({ status: "fulfilled", value }),
           (reason) => ({ status: "rejected", reason })
         )];
@@ -513,15 +571,7 @@ router.post("/chat/stream", async (req, res) => {
 
     const systemPrompt = `You are NOVA, a warm, direct, and practical voice-first AI assistant. Answer the user's question naturally and concisely. Sound like a helpful person, not a robot.${memoriesContext}`;
 
-    if (!ai.isAvailable()) {
-      // Fallback: send a single chunk
-      res.write(`data: ${JSON.stringify({ type: "chunk", text: "I'm running in offline mode. Please configure an AI provider to get real responses." })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: "done", timestamp: Date.now() })}\n\n`);
-      res.end();
-      return;
-    }
-
-    // Stream chunks from the AI
+    // Stream chunks from the AI (mock AI will handle if no real provider)
     for await (const chunk of ai.chatStream(systemPrompt, text, { task: "chat", maxTokens: 1200, temperature: 0.4 })) {
       if (chunk) {
         res.write(`data: ${JSON.stringify({ type: "chunk", text: chunk })}\n\n`);
@@ -542,6 +592,7 @@ router.post("/chat/stream", async (req, res) => {
  */
 router.post("/execute", async (req, res) => {
   const plan = req.body.plan || req.body.steps;
+  const intent = req.body.intent || null;
   const userId = currentUserId(req);
 
   if (!plan || !Array.isArray(plan)) {
@@ -582,13 +633,11 @@ router.post("/execute", async (req, res) => {
       }
     }
 
-    const execution = agentResult?.success === false
-      ? { results: [], batches: [] }
-      : await executePlanBatches(plan, userId);
+    const execution = await executePlanBatches(plan, userId, intent);
     results.push(...execution.results);
 
     const failed = results.filter((step) => step.status === "failed");
-    const blocked = results.filter((step) => ["connector_required", "waiting_for_input"].includes(step.status));
+    const blocked = results.filter((step) => ["connector_required", "waiting_for_input", "requires_confirmation"].includes(step.status));
     const review = await reviewExecution({ plan, results, agent: agentResult });
 
     res.json({

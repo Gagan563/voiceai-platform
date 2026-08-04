@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
   Cpu,
@@ -8,10 +9,12 @@ import {
   Palette,
   Plug,
   Save,
+  Trash2,
   Volume2,
   X,
 } from "lucide-react";
 import useAppStore from "@/store/appStore";
+import { apiClient } from "@/api/client";
 
 const panelVariants = {
   hidden: { x: "100%", opacity: 0 },
@@ -68,7 +71,10 @@ export default function SettingsPanel({ isOpen, onClose }) {
   const toggleTtsEnabled = useAppStore((state) => state.toggleTtsEnabled);
   const toggleTtsMode = useAppStore((state) => state.toggleTtsMode);
   const toggleAutopilot = useAppStore((state) => state.toggleAutopilot);
+  const logout = useAppStore((state) => state.logout);
   const [saved, setSaved] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const markSaved = () => {
     setSaved(true);
@@ -255,6 +261,56 @@ export default function SettingsPanel({ isOpen, onClose }) {
                   <option value="medium">Medium font</option>
                   <option value="large">Large font</option>
                 </select>
+              </Section>
+
+              {/* Danger Zone */}
+              <Section icon={AlertTriangle} title="Danger Zone">
+                {showDeleteConfirm ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold leading-relaxed text-danger">
+                      This will permanently delete your account and all associated
+                      data (memories, sessions, tasks, mood logs, finance records,
+                      emergency contacts, documents). This action cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={async () => {
+                          setDeleting(true);
+                          try {
+                            await apiClient.delete("/account");
+                            await apiClient.delete("/auth/session");
+                            logout();
+                          } catch (err) {
+                            console.error("Delete failed:", err);
+                            setDeleting(false);
+                          }
+                        }}
+                        className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger px-3 text-xs font-bold text-white transition hover:brightness-110 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deleting ? "Deleting…" : "Yes, delete everything"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex h-9 flex-1 items-center justify-center rounded-lg border border-[rgba(255,255,255,0.08)] px-3 text-xs font-bold text-text-muted transition hover:text-text"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-4 text-xs font-bold text-danger transition hover:bg-danger/20"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete all my data
+                  </button>
+                )}
               </Section>
             </div>
 

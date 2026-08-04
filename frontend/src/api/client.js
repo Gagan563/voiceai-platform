@@ -131,10 +131,7 @@ const getSelectedModel = () => {
 const detectActionType = (text) => {
   const value = text.toLowerCase();
 
-  if (/(build|create|generate|make|develop|platform|app|website|dashboard|requirements|prd|spec)/.test(value)) {
-    return "create";
-  }
-
+  // Check specific types first — order matters.
   if (/(schedule|meeting|calendar|appointment|book|invite|sync)/.test(value)) {
     return "schedule";
   }
@@ -149,6 +146,14 @@ const detectActionType = (text) => {
 
   if (/(email|send|message|text|mail|reply|draft)/.test(value)) {
     return "message";
+  }
+
+  // "create" only triggers for genuine app/build requests — not "create a reminder".
+  if (
+    /(build|create|generate|make|develop)/.test(value) &&
+    /(platform|app|website|dashboard|requirements|prd|spec|prototype|page|site|game)/.test(value)
+  ) {
+    return "create";
   }
 
   return "general";
@@ -387,9 +392,14 @@ export async function analyzeContextImage(file, prompt, type = "image") {
   form.append("prompt", prompt || "Summarize this image or screen for my next voice command.");
   form.append("type", type);
 
-  return apiClient.post("/context/image", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  return apiClient.post("/context/image", form);
+}
+
+export async function analyzeContextDocument(file) {
+  const form = new FormData();
+  form.append("document", file);
+
+  return apiClient.post("/context/document", form);
 }
 
 export async function getRoutines() {
@@ -452,9 +462,7 @@ export async function transcribeAudio(audioBlob) {
   const form = new FormData();
   form.append("audio", audioBlob);
 
-  return apiClient.post("/transcribe", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  return apiClient.post("/transcribe", form);
 }
 
 export async function getMemories() {

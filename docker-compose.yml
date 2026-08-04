@@ -48,6 +48,10 @@ services:
       DATABASE_URL: postgresql://voiceai:voiceai_secret@postgres:5432/voiceai_db
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      VOICEAI_MEMORY_MODE: local
+      ALLOW_STUB_TRANSCRIPTION: "true"
+      CONNECTOR_DEMO_MODE: "true"
+      JWT_SECRET: ${JWT_SECRET:-nova-docker-jwt-secret-change-in-production-64chars-min-padding}
     depends_on:
       postgres:
         condition: service_healthy

@@ -67,8 +67,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const GROQ_MODEL = process.env.GROQ_MODEL || "qwen/qwen3-32b";
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
+const GROQ_TIMEOUT_MS = envInt("GROQ_TIMEOUT_MS", 30_000);
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
@@ -78,6 +79,8 @@ const ANTHROPIC_API_VERSION = process.env.ANTHROPIC_API_VERSION || "2023-06-01";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_PLACEHOLDER_KEYS = ["sk-xxxxx-your-openai-key-here", "your-openai-api-key-here"];
+const OPENAI_WHISPER_MODEL = process.env.OPENAI_WHISPER_MODEL || "gpt-4o-mini-transcribe";
+const OPENAI_WHISPER_LANGUAGE = process.env.OPENAI_WHISPER_LANGUAGE || "en";
 const ALLOW_STUB_TRANSCRIPTION = envBool("ALLOW_STUB_TRANSCRIPTION", false);
 const DEMO_TRANSCRIPT = process.env.DEMO_TRANSCRIPT ||
   "Schedule a meeting with Sarah next Tuesday at 3pm about the Q4 budget";
@@ -98,6 +101,13 @@ const MEMORY_MODE = process.env.VOICEAI_MEMORY_MODE || null;
 // ── MCP Connectors ──
 
 const CONNECTOR_DEMO_MODE = envBool("CONNECTOR_DEMO_MODE", true);
+
+// ── Safety & Accessibility ──
+
+const CONTENT_MODERATION_ENABLED = envBool("CONTENT_MODERATION_ENABLED", true);
+const PARENTAL_CONTROLS_ENABLED = envBool("PARENTAL_CONTROLS_ENABLED", false);
+const PARENTAL_CONTROLS_AGE_GROUP = process.env.PARENTAL_CONTROLS_AGE_GROUP || "adult";
+const VAD_SILENCE_TIMEOUT_MS = envInt("VAD_SILENCE_TIMEOUT_MS", 2000);
 
 // ── File size limits (bytes) ──
 
@@ -170,12 +180,15 @@ module.exports = {
   GROQ_API_KEY,
   GROQ_MODEL,
   GROQ_BASE_URL,
+  GROQ_TIMEOUT_MS,
   ANTHROPIC_API_KEY,
   ANTHROPIC_MODEL,
   ANTHROPIC_API_VERSION,
 
   // OpenAI
   OPENAI_API_KEY,
+  OPENAI_WHISPER_MODEL,
+  OPENAI_WHISPER_LANGUAGE,
   ALLOW_STUB_TRANSCRIPTION,
   DEMO_TRANSCRIPT,
 
@@ -190,6 +203,12 @@ module.exports = {
 
   // MCP
   CONNECTOR_DEMO_MODE,
+
+  // Safety & Accessibility
+  CONTENT_MODERATION_ENABLED,
+  PARENTAL_CONTROLS_ENABLED,
+  PARENTAL_CONTROLS_AGE_GROUP,
+  VAD_SILENCE_TIMEOUT_MS,
 
   // Limits
   FILE_SIZE_LIMITS,

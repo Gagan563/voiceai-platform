@@ -58,9 +58,16 @@ router.post("/", upload.single("audio"), async (req, res) => {
       const formData = new FormData();
       const audioBlob = new Blob([buffer], { type: mimetype });
       formData.append("file", audioBlob, originalname || "audio.webm");
-      formData.append("model", "whisper-1");
-      formData.append("language", "en");
+
+      // Use model from request body/query, or fall back to config default
+      const whisperModel = req.body?.model || req.query?.model || config.OPENAI_WHISPER_MODEL;
+      const whisperLanguage = req.body?.language || req.query?.language || config.OPENAI_WHISPER_LANGUAGE;
+
+      formData.append("model", whisperModel);
+      formData.append("language", whisperLanguage);
       formData.append("response_format", "json");
+
+      console.log(`[Transcribe] Using model: ${whisperModel}, language: ${whisperLanguage}`);
 
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -92,11 +99,13 @@ router.post("/", upload.single("audio"), async (req, res) => {
       return res.json({
         success: true,
         transcript: result.text || "",
-        engine: "whisper-1",
+        engine: whisperModel,
+        model: whisperModel,
         metadata: {
           filename: originalname,
           size_bytes: size,
           mimetype: mimetype,
+          language: whisperLanguage,
         },
       });
     }

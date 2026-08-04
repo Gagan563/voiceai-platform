@@ -17,6 +17,9 @@ RUN npm ci --omit=dev
 # Copy backend source
 COPY backend/ ./
 
+# Generate Prisma client
+RUN npx prisma generate
+
 # Copy built frontend into backend static serving
 COPY --from=frontend-build /app/frontend/dist ./public
 

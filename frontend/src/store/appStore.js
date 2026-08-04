@@ -20,12 +20,24 @@ const defaultSettings = {
   apiKeys: { anthropic: "", openai: "", elevenlabs: "" },
   selectedModel: "claude-sonnet-4-20250514",
   sttMode: "browser",
+  whisperModel: "gpt-4o-mini-transcribe",
   ttsEnabled: true,
   ttsMode: "browser",
   autopilotEnabled: true,
   voiceActivationEnabled: false,
   memoryEnabled: true,
   fontSize: "medium",
+  // Accessibility
+  vadSilenceTimeout: 2000,
+  speechRate: 1.0,
+  highContrastMode: false,
+  largeTextMode: false,
+  voiceOnlyMode: false,
+  speakPlansAloud: true,
+  // Safety
+  parentalControls: false,
+  parentalAgeGroup: "adult",
+  financialDoubleConfirm: true,
 };
 
 const defaultAuth = {
@@ -288,6 +300,19 @@ const inferModule = (intent = {}, sourceText = "") => {
   return "chat";
 };
 
+/** Strip any auth-related query parameters from a URL to prevent token leakage. */
+const stripTokenFromUrl = (url) => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    for (const key of ["token", "access_token", "auth", "jwt"]) {
+      parsed.searchParams.delete(key);
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+};
+
 const createPreviewArtifact = ({
   intent,
   sourceText,
@@ -303,8 +328,10 @@ const createPreviewArtifact = ({
   const updatedAt = new Date().toISOString();
   const previewVersion = execution?.execution_id || updatedAt;
   const basePreviewUrl = getAgentOutputUrl(previewFile);
-  const previewUrl = basePreviewUrl
-    ? `${basePreviewUrl}${basePreviewUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(previewVersion)}`
+  // Security: never leak auth tokens in iframe src URLs.
+  const sanitizedUrl = basePreviewUrl ? stripTokenFromUrl(basePreviewUrl) : null;
+  const previewUrl = sanitizedUrl
+    ? `${sanitizedUrl}${sanitizedUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(previewVersion)}`
     : null;
 
   return {
@@ -419,6 +446,9 @@ export const useAppStore = create(
       planApproved: false,
       pendingClarification: null,
       error: null,
+      orchestratorRun: null,   // { status, agents, totalSteps, duration }
+
+      updateOrchestratorRun: (data) => set({ orchestratorRun: data }),
 
       setRecording: (value) => set({ isRecording: value }),
       setSpeakingId: (id) => set({ speakingId: id }),
@@ -906,15 +936,15 @@ export const useAppStore = create(
           : fullPlan?.filter((step) => !step.requires_input);
         if (!plan?.length) {
           const blockedStep = firstBlockedStep(fullPlan);
-          set({ isLoading: false, loadingStage: null });
-          if (blockedStep) {
-            set({
-              pendingClarification: {
-                type: "blocked_step",
-                stepId: blockedStep.id,
-              },
-            });
-          }
+          // Fix 0-10: reset loading state BEFORE adding the message to prevent
+          // a brief flash of the loading indicator.
+          set({
+            isLoading: false,
+            loadingStage: null,
+            pendingClarification: blockedStep
+              ? { type: "blocked_step", stepId: blockedStep.id }
+              : null,
+          });
           get().addMessage({
             role: "assistant",
             text: "There are no runnable steps yet. Answer the blocked step first and I can continue.",
@@ -1118,9 +1148,64 @@ export const useAppStore = create(
         }),
 
       setSttMode: (mode) =>
+        set((state) => {
+          const update = { settings: { ...state.settings, sttMode: mode }, sttMode: mode };
+          // When switching to a whisper model, also set the whisperModel
+          if (mode !== "browser") {
+            update.settings.whisperModel = mode;
+          }
+          return update;
+        }),
+
+      setWhisperModel: (model) =>
         set((state) => ({
-          settings: { ...state.settings, sttMode: mode },
-          sttMode: mode,
+          settings: { ...state.settings, whisperModel: model, sttMode: model },
+          sttMode: model,
+        })),
+
+      setVadSilenceTimeout: (ms) =>
+        set((state) => ({
+          settings: { ...state.settings, vadSilenceTimeout: ms },
+        })),
+
+      setSpeechRate: (rate) =>
+        set((state) => ({
+          settings: { ...state.settings, speechRate: rate },
+        })),
+
+      toggleHighContrast: () =>
+        set((state) => ({
+          settings: { ...state.settings, highContrastMode: !state.settings.highContrastMode },
+        })),
+
+      toggleLargeText: () =>
+        set((state) => ({
+          settings: { ...state.settings, largeTextMode: !state.settings.largeTextMode },
+        })),
+
+      toggleVoiceOnly: () =>
+        set((state) => ({
+          settings: { ...state.settings, voiceOnlyMode: !state.settings.voiceOnlyMode },
+        })),
+
+      toggleSpeakPlans: () =>
+        set((state) => ({
+          settings: { ...state.settings, speakPlansAloud: !state.settings.speakPlansAloud },
+        })),
+
+      toggleParentalControls: () =>
+        set((state) => ({
+          settings: { ...state.settings, parentalControls: !state.settings.parentalControls },
+        })),
+
+      setParentalAgeGroup: (group) =>
+        set((state) => ({
+          settings: { ...state.settings, parentalAgeGroup: group },
+        })),
+
+      toggleFinancialDoubleConfirm: () =>
+        set((state) => ({
+          settings: { ...state.settings, financialDoubleConfirm: !state.settings.financialDoubleConfirm },
         })),
 
       /** Toggle TTS on/off */
@@ -1170,17 +1255,21 @@ export const useAppStore = create(
           },
         };
 
+        // Security (fix 0-5): NEVER rehydrate JWTs or auth state from
+        // localStorage. The runtime token flow (login → setRuntimeAuthToken)
+        // is the only valid source of a bearer token.
         return {
           ...state,
           settings,
           sttMode: settings.sttMode,
           messages: (state.messages || seededMessages).map(normalizeMessage),
           sessions: (state.sessions || seededSessions).map(normalizeSession),
-          auth: state.auth?.isAuthenticated ? defaultAuth : {
+          auth: {
             ...defaultAuth,
-            ...(state.auth || {}),
+            // Preserve non-sensitive display fields but always force re-login.
+            user: null,
             token: null,
-            user: state.auth?.user || null,
+            isAuthenticated: false,
           },
           activeModule: state.activeModule || "chat",
           moduleRecords: state.moduleRecords || {},

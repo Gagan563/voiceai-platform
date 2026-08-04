@@ -7,6 +7,7 @@
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const config = require("../config");
+const mockAI = require("./mockAI");
 
 const CIRCUIT_FAILURE_LIMIT = config.AI_CIRCUIT_FAILURE_LIMIT;
 const CIRCUIT_RESET_MS = config.AI_CIRCUIT_RESET_MS;
@@ -85,13 +86,21 @@ function providerOrder(options = {}) {
   if (options.provider) return [options.provider];
 
   const mode = config.AI_ROUTER_MODE;
+
+  // Single-provider modes: force one provider as primary with ordered fallbacks.
   if (mode === "groq") return ["groq", "gemini", "anthropic"];
   if (mode === "gemini") return ["gemini", "groq", "anthropic"];
   if (mode === "anthropic") return ["anthropic", "groq", "gemini"];
 
+  // Hybrid mode (default): route by task complexity.
+  // - Deep reasoning (agent, code, large context) → Gemini primary, Anthropic secondary
+  // - Fast/cheap tasks (chat, intent, review)     → Groq primary, Gemini secondary
+  // - Anthropic is always the final fallback
   const task = options.task || "general";
   const needsDeepReasoning = task === "agent" || task === "code" || options.maxTokens > 4096;
-  return needsDeepReasoning ? ["gemini", "anthropic", "groq"] : ["gemini", "groq", "anthropic"];
+  return needsDeepReasoning
+    ? ["gemini", "anthropic", "groq"]
+    : ["groq", "gemini", "anthropic"];
 }
 
 function getGeminiModel() {
@@ -228,30 +237,52 @@ async function callGroqMessages(systemPrompt, messages, options = {}) {
     Authorization: `Bearer ${apiKey}`,
   };
 
-  let response = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    if (options.json && body.response_format) {
-      const fallbackBody = { ...body };
-      delete fallbackBody.response_format;
-      response = await fetch(endpoint, {
+  const groqFetch = async (requestBody) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.GROQ_TIMEOUT_MS);
+    try {
+      return await fetch(endpoint, {
         method: "POST",
         headers,
-        body: JSON.stringify(fallbackBody),
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
-      if (response.ok) {
-        const data = await response.json();
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error(`Groq request timed out after ${config.GROQ_TIMEOUT_MS}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const isJsonModeRejected = (status, errorText) =>
+    status === 400 &&
+    /response_format|json|schema/i.test(String(errorText || ""));
+
+  let response = await groqFetch(body);
+
+  if (!response.ok) {
+    const originalErrorText = await response.text();
+    const originalStatus = response.status;
+
+    // Retry without response_format if the provider rejected JSON mode.
+    if (options.json && body.response_format && isJsonModeRejected(originalStatus, originalErrorText)) {
+      const fallbackBody = { ...body };
+      delete fallbackBody.response_format;
+      const retryResponse = await groqFetch(fallbackBody);
+      if (retryResponse.ok) {
+        const data = await retryResponse.json();
         return data.choices?.[0]?.message?.content?.trim() || "";
       }
-      const retryText = await response.text();
-      throw new Error(`Groq request failed after JSON retry: ${response.status} ${retryText}`);
+      const retryErrorText = await retryResponse.text();
+      throw new Error(
+        `Groq request failed: ${originalStatus} ${originalErrorText} | ` +
+        `Retry without JSON mode also failed: ${retryResponse.status} ${retryErrorText}`
+      );
     }
-    throw new Error(`Groq request failed: ${response.status} ${text}`);
+    throw new Error(`Groq request failed: ${originalStatus} ${originalErrorText}`);
   }
 
   const data = await response.json();
@@ -368,7 +399,12 @@ async function routeCall(callType, systemPrompt, payload, options = {}) {
     }
   }
 
-  throw new Error(`No AI provider available. ${errors.join(" | ")}`);
+  // ── Mock AI fallback — no real provider available ──
+  console.log("[AI] All providers unavailable, using mock AI fallback");
+  if (callType === "multi") {
+    return mockAI.chatMultiTurn(systemPrompt, payload);
+  }
+  return mockAI.chat(systemPrompt, payload);
 }
 
 async function chat(systemPrompt, userMessage, options = {}) {
@@ -380,6 +416,11 @@ async function chatMultiTurn(systemPrompt, messages, options = {}) {
 }
 
 async function chatJSON(systemPrompt, userMessage, options = {}) {
+  // If no real provider is available, use mock AI directly for JSON
+  if (!hasRealProvider()) {
+    return mockAI.chatJSON(systemPrompt, userMessage);
+  }
+
   const text = await routeCall("single", systemPrompt, userMessage, {
     ...options,
     json: true,
@@ -401,7 +442,8 @@ async function chatJSON(systemPrompt, userMessage, options = {}) {
 
 async function chatImage(systemPrompt, image, prompt, options = {}) {
   if (!isProviderConfigured("gemini") || isCircuitOpen("gemini")) {
-    throw new Error("Gemini vision is not available.");
+    // Fall back to mock vision
+    return mockAI.chatImage(systemPrompt, image, prompt);
   }
 
   try {
@@ -410,14 +452,25 @@ async function chatImage(systemPrompt, image, prompt, options = {}) {
     return text;
   } catch (error) {
     recordFailure("gemini", error);
-    throw error;
+    // Fall back to mock vision instead of throwing
+    return mockAI.chatImage(systemPrompt, image, prompt);
   }
 }
 
-function isAvailable() {
+/**
+ * Check if any real AI provider is configured and available.
+ */
+function hasRealProvider() {
   return ["groq", "gemini", "anthropic"].some(
     (provider) => isProviderConfigured(provider) && !isCircuitOpen(provider)
   );
+}
+
+/**
+ * Always returns true — mock AI is always available as fallback.
+ */
+function isAvailable() {
+  return true;
 }
 
 /**
@@ -482,7 +535,11 @@ async function* chatStream(systemPrompt, userMessage, options = {}) {
   );
 
   if (!provider) {
-    throw new Error("No AI provider available for streaming.");
+    // Use mock AI streaming fallback
+    for await (const chunk of mockAI.chatStream(systemPrompt, userMessage)) {
+      yield chunk;
+    }
+    return;
   }
 
   if (provider === "gemini") {
@@ -513,7 +570,11 @@ async function* chatConversationalStream(systemPrompt, messages, options = {}) {
   );
 
   if (!provider) {
-    throw new Error("No AI provider available for conversational streaming.");
+    // Use mock AI conversational streaming fallback
+    for await (const chunk of mockAI.chatConversationalStream(systemPrompt, messages)) {
+      yield chunk;
+    }
+    return;
   }
 
   if (provider === "gemini") {

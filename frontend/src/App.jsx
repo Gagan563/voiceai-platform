@@ -13,6 +13,12 @@ import RoutinesPanel from "@/components/RoutinesPanel";
 import RequirementsPanel from "@/components/RequirementsPanel";
 import ToastStack from "@/components/ToastStack";
 import NovaModules from "@/components/NovaModules";
+import DashboardView from "@/components/DashboardView";
+import ProjectsView from "@/components/ProjectsView";
+import TemplatesView from "@/components/TemplatesView";
+import AgentProgressPanel from "@/components/AgentProgressPanel";
+import BackgroundAgentsPanel from "@/components/BackgroundAgentsPanel";
+import RemindersPanel from "@/components/RemindersPanel";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import useSocket from "@/hooks/useSocket";
@@ -28,6 +34,9 @@ export default function App() {
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [routinesPanelOpen, setRoutinesPanelOpen] = useState(false);
   const [requirementsPanelOpen, setRequirementsPanelOpen] = useState(false);
+  const [agentProgressOpen, setAgentProgressOpen] = useState(false);
+  const [bgAgentsOpen, setBgAgentsOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
 
   // Store
   const messages = useAppStore((s) => s.messages);
@@ -74,7 +83,16 @@ export default function App() {
       case "routines": setRoutinesPanelOpen(true); break;
       case "requirements": setRequirementsPanelOpen(true); break;
       case "modules": setActiveView("wellness"); break;
+      case "agents": setAgentProgressOpen(true); break;
+      case "background-agents": setBgAgentsOpen(true); break;
+      case "reminders": setRemindersOpen(true); break;
     }
+  };
+
+  // Template selection fires a prompt immediately
+  const handleSelectTemplate = (prompt) => {
+    setActiveView("playground");
+    if (!isLoading) processUserInput(prompt);
   };
 
   const handleBackToStart = () => {
@@ -113,6 +131,15 @@ export default function App() {
             onSelectModule={setActiveView}
             onClose={() => setActiveView("playground")}
           />
+        ) : activeView === "dashboard" ? (
+          /* ── Dashboard ── */
+          <DashboardView />
+        ) : activeView === "apps" ? (
+          /* ── My Projects ── */
+          <ProjectsView />
+        ) : activeView === "gallery" ? (
+          /* ── Templates ── */
+          <TemplatesView onSelectTemplate={handleSelectTemplate} />
         ) : (
           /* ── Idle / Hero mode ── */
           <>
@@ -145,6 +172,9 @@ export default function App() {
       <RoutinesPanel isOpen={routinesPanelOpen} onClose={() => setRoutinesPanelOpen(false)} />
       <RequirementsPanel isOpen={requirementsPanelOpen} onClose={() => setRequirementsPanelOpen(false)} />
       <SettingsPanel isOpen={settingsPanelOpen} onClose={() => setSettingsPanelOpen(false)} />
+      <AgentProgressPanel isOpen={agentProgressOpen} onClose={() => setAgentProgressOpen(false)} />
+      <BackgroundAgentsPanel isOpen={bgAgentsOpen} onClose={() => setBgAgentsOpen(false)} />
+      <RemindersPanel isOpen={remindersOpen} onClose={() => setRemindersOpen(false)} />
       <Onboarding />
       <ToastStack backendOnline={backendOnline} error={error} />
     </div>

@@ -25,6 +25,7 @@ const { listConnectors } = require("./services/mcp");
 const { runAgent } = require("./services/agent");
 const { orchestrate, AGENTS } = require("./services/orchestrator");
 const { getUserOutputDir } = require("./services/tools");
+const { extractDocument } = require("./services/document");
 const {
   listRoutines,
   createRoutine,
@@ -42,6 +43,10 @@ const { authMiddleware } = require("./middleware/auth");
 const { sanitizeMiddleware } = require("./middleware/sanitize");
 const { aiLimiter, agentLimiter, authLimiter, generalLimiter } = require("./middleware/rateLimit");
 const authRouter = require("./routes/auth");
+const moduleDataRouter = require("./routes/module-data");
+const backgroundAgent = require("./services/backgroundAgent");
+const { safetyMiddleware } = require("./middleware/safety");
+const { registry: skillRegistry } = require("./services/skills");
 
 // ── Validate environment ──
 validateEnv();
@@ -92,6 +97,11 @@ const imageUpload = multer({
   },
 });
 
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: config.FILE_SIZE_LIMITS.agentFile },
+});
+
 // Request logger
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -135,7 +145,11 @@ app.get("/health", (req, res) => {
     status: "ok",
     service: config.APP_NAME,
     version: config.APP_VERSION,
-    ai_engine: ai.isAvailable() ? "gemini" : "mock",
+    ai_engine: (() => {
+      const status = ai.providerStatus ? ai.providerStatus() : {};
+      const realProvider = Object.entries(status).find(([, s]) => s.configured && !s.circuit_open);
+      return realProvider ? realProvider[0] : "mock_fallback";
+    })(),
     ai_router: ai.providerStatus ? ai.providerStatus() : undefined,
     memory: getMemoryStatus ? getMemoryStatus() : undefined,
     timestamp: new Date().toISOString(),
@@ -185,9 +199,18 @@ app.use("/mcp", generalLimiter, mcpRouter);
 app.use("/modules", generalLimiter, modulesRouter);
 app.use("/nova", aiLimiter, novaModulesRouter);
 app.use("/api/auth", authLimiter, authRouter);
+app.use("/api", generalLimiter, moduleDataRouter);
 
-// Chat / Intent / Plan / Execute / Stream (extracted)
-app.use("/", chatRouter);
+// Skills API endpoint
+app.get("/api/skills", generalLimiter, (req, res) => {
+  res.json({
+    success: true,
+    skills: skillRegistry.listByBuildOrder(),
+  });
+});
+
+// Chat / Intent / Plan / Execute / Stream (with safety middleware)
+app.use("/", safetyMiddleware, chatRouter);
 
 // ── Routine automation ──
 app.get("/routines", (req, res) => {
@@ -247,6 +270,28 @@ app.patch("/reminders/:id", (req, res) => {
   res.json({ success: true, reminder });
 });
 
+// ── Background Agent management ──
+app.get("/background-agents", (req, res) => {
+  res.json({ success: true, agents: backgroundAgent.listAgents(req.user.id) });
+});
+
+app.patch("/background-agents/:id/toggle", (req, res) => {
+  const agent = backgroundAgent.setAgentEnabled(req.params.id, req.body?.enabled === undefined
+    ? !backgroundAgent.isAgentEnabledForUser(req.params.id, req.user.id)
+    : Boolean(req.body.enabled), req.user.id);
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  res.json({ success: true, agent: { id: agent.id, enabled: !agent.disabledForUsers.has(req.user.id) } });
+});
+
+app.post("/background-agents/:id/run", async (req, res) => {
+  try {
+    const result = await backgroundAgent.runAgent(req.params.id, req.user.id);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ── Image and screen context ──
 app.post("/context/image", imageUpload.single("image"), async (req, res) => {
   if (!req.file) {
@@ -302,6 +347,74 @@ Do not claim certainty for unclear details.`,
 // ══════════════════════════════════════════
 //  AUTONOMOUS AGENT ROUTES
 // ══════════════════════════════════════════
+
+app.post("/context/document", documentUpload.single("document"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Upload a document file in the 'document' field." });
+  }
+
+  try {
+    const document = await extractDocument({
+      buffer: req.file.buffer,
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+
+    res.json({
+      success: true,
+      filename: document.filename,
+      kind: document.kind,
+      characters: document.characters,
+      summary: document.summary,
+      prompt: document.prompt,
+      text: document.text.slice(0, 18000),
+      truncated: document.text.length > 18000,
+    });
+  } catch (error) {
+    console.warn("[Document] Analysis failed:", error.message);
+    res.status(400).json({
+      error: "Document analysis failed",
+      details: "The uploaded document could not be processed.",
+    });
+  }
+});
+
+/**
+ * POST /context/document/plan
+ * Upload a requirement document and receive a structured implementation plan.
+ */
+app.post("/context/document/plan", documentUpload.single("document"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Upload a document file in the 'document' field." });
+  }
+
+  try {
+    const { extractAndPlan } = require("./services/document");
+    const result = await extractAndPlan({
+      buffer: req.file.buffer,
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+
+    res.json({
+      success: true,
+      filename: result.document.filename,
+      kind: result.document.kind,
+      characters: result.document.characters,
+      summary: result.document.summary,
+      requirements: result.requirements,
+      phases: result.phases,
+      text: result.document.text.slice(0, 18000),
+      truncated: result.document.text.length > 18000,
+    });
+  } catch (error) {
+    console.warn("[Document] Plan extraction failed:", error.message);
+    res.status(400).json({
+      error: "Document plan extraction failed",
+      details: "The uploaded document could not be converted into a plan.",
+    });
+  }
+});
 
 /**
  * POST /agent/run
@@ -543,6 +656,10 @@ server.listen(PORT, () => {
     return runRoutineWorkflow(routine, config.DEFAULT_USER_ID);
   });
   console.log("[Routine] Scheduler ready");
+
+  // Start background agents
+  backgroundAgent.registerBuiltinAgents();
+  backgroundAgent.startScheduler(io, config.DEFAULT_USER_ID);
 });
 
 module.exports = { app, server };

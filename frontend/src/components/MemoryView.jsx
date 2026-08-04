@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
+  Search,
   Trash2,
   X,
   Loader2,
@@ -45,6 +46,7 @@ export default function MemoryView({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [deleting, setDeleting] = useState(new Set());
+  const [query, setQuery] = useState("");
 
   const fetchMemories = useCallback(async () => {
     setLoading(true);
@@ -61,9 +63,19 @@ export default function MemoryView({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
+      queueMicrotask(() => setQuery(""));
       queueMicrotask(fetchMemories);
     }
   }, [isOpen, fetchMemories]);
+
+  // Client-side filter (backend semantic search available when pgvector configured)
+  const filtered = useMemo(() => {
+    if (!query.trim()) return memories;
+    const q = query.trim().toLowerCase();
+    return memories.filter((m) =>
+      (m.content || "").toLowerCase().includes(q)
+    );
+  }, [memories, query]);
 
   const handleDelete = async (memoryId) => {
     setDeleting((prev) => new Set(prev).add(memoryId));
@@ -141,6 +153,9 @@ export default function MemoryView({ isOpen, onClose }) {
                   </h2>
                   <p className="text-xs text-text-muted">
                     {memories.length} stored {memories.length === 1 ? "memory" : "memories"}
+                    {query && filtered.length !== memories.length && (
+                      <span className="ml-1 text-aqua">· {filtered.length} match{filtered.length !== 1 ? "es" : ""}</span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -166,6 +181,29 @@ export default function MemoryView({ isOpen, onClose }) {
                 >
                   <X className="h-4.5 w-4.5" />
                 </button>
+              </div>
+            </div>
+
+            {/* Search bar */}
+            <div className="border-b border-line px-5 py-2">
+              <div className="flex items-center gap-2 rounded-lg border border-line bg-white/[0.03] px-3 py-1.5">
+                <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search memories…"
+                  className="flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="text-text-muted hover:text-text"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -215,10 +253,25 @@ export default function MemoryView({ isOpen, onClose }) {
                 </div>
               )}
 
+              {/* No search results */}
+              {!loading && query && filtered.length === 0 && memories.length > 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Search className="h-8 w-8 text-text-muted mb-3" />
+                  <p className="text-sm font-semibold text-text">No results for &ldquo;{query}&rdquo;</p>
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="mt-2 text-xs text-aqua underline hover:no-underline"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
+
               {/* Memory cards */}
               <div className="space-y-2">
                 <AnimatePresence mode="popLayout">
-                  {memories.map((memory, i) => (
+                  {filtered.map((memory, i) => (
                     <motion.div
                       key={memory.id}
                       custom={i}

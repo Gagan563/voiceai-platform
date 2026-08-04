@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Bell,
   BookOpen,
+  Bot,
   ChevronDown,
   ChevronRight,
   Code2,
@@ -17,6 +19,7 @@ import {
   Settings,
   ShieldAlert,
   X,
+  Zap,
 } from "lucide-react";
 
 const navSections = [
@@ -56,6 +59,9 @@ const navSections = [
 const bottomLinks = [
   { id: "memory", label: "Memory", icon: Search, panel: "memory" },
   { id: "history", label: "History", icon: BookOpen, panel: "history" },
+  { id: "reminders", label: "Reminders", icon: Bell, panel: "reminders" },
+  { id: "agents", label: "Agent DAG", icon: Zap, panel: "agents" },
+  { id: "bg-agents", label: "Bg Agents", icon: Bot, panel: "background-agents" },
   { id: "apikey", label: "API Keys", icon: Key, panel: "settings" },
   { id: "settings", label: "Settings", icon: Settings, panel: "settings" },
 ];

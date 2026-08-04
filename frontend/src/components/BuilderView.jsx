@@ -21,7 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { VoiceButton } from "@/components/VoiceButton";
-import { analyzeContextImage } from "@/api/client";
+import { analyzeContextDocument, analyzeContextImage } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import useTTS from "@/hooks/useTTS";
 import useElevenLabs from "@/hooks/useElevenLabs";
@@ -420,11 +420,14 @@ export default function BuilderView({ onBack, onOpenPanel }) {
     const [file] = Array.from(e.target.files || []);
     e.target.value = "";
     if (!file || disabled) return;
+    setContextBusy(true);
     try {
-      const content = await file.text();
-      submitInput(`Requirements file: ${file.name}\n\n${content.slice(0, 12000)}`);
-    } catch {
-      submitInput(`Requirements file: ${file.name}\n\nBuild an autonomous AI product from this uploaded requirement.`);
+      const result = await analyzeContextDocument(file);
+      submitInput(result.prompt || `Requirements file: ${file.name}\n\n${result.text || result.summary || ""}`);
+    } catch (err) {
+      submitInput(`Requirements file upload failed for ${file.name}: ${err.message || "unknown"}`);
+    } finally {
+      setContextBusy(false);
     }
   };
 
@@ -582,7 +585,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
             <div className="mt-2 flex items-center gap-1">
               <VoiceButton />
 
-              <input ref={fileInputRef} type="file" className="hidden" accept=".txt,.md,.json,.csv,.yaml,.yml" onChange={handleFile} />
+              <input ref={fileInputRef} type="file" className="hidden" accept=".docx,.txt,.md,.json,.csv,.yaml,.yml" onChange={handleFile} />
               <input ref={imageInputRef} type="file" className="hidden" accept="image/*" onChange={handleImage} />
 
               <button

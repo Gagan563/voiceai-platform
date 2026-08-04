@@ -31,8 +31,12 @@ export default function useSocket() {
     connected: false,
   });
   const addMessage = useAppStore((s) => s.addMessage);
+  const updateOrchestratorRun = useAppStore((s) => s.updateOrchestratorRun);
   const authToken = useAppStore((s) => s.auth?.token);
   const isAuthenticated = useAppStore((s) => s.auth?.isAuthenticated);
+
+  // Local agent-run state accumulator (reset per orchestration run)
+  const agentMap = useRef({});
 
   const connect = useCallback(() => {
     if (!isAuthenticated || !authToken) return;
@@ -85,7 +89,53 @@ export default function useSocket() {
     socket.on("orchestrator:step", (step) => {
       console.log(`[Socket.IO] orchestrator:step — ${step.type}`);
 
+      if (step.type === "orchestrator_start") {
+        agentMap.current = {};
+        updateOrchestratorRun({
+          status: "running",
+          agents: [],
+          totalSteps: step.totalSteps || 0,
+          duration: null,
+        });
+      }
+
+      if (step.type === "orchestrator_agent_start") {
+        const id = step.agentId || step.agentName || String(Date.now());
+        agentMap.current[id] = {
+          id,
+          name: step.agentName || "Agent",
+          icon: step.agentIcon || "🤖",
+          status: "running",
+          currentAction: step.description || "Starting…",
+          logs: [],
+          duration: null,
+        };
+        updateOrchestratorRun({
+          status: "running",
+          agents: Object.values(agentMap.current),
+          totalSteps: step.totalSteps || Object.keys(agentMap.current).length,
+          duration: null,
+        });
+      }
+
       if (step.type === "orchestrator_step_complete") {
+        const id = step.agentId || step.agentName;
+        if (id && agentMap.current[id]) {
+          agentMap.current[id].status = "done";
+          agentMap.current[id].currentAction = step.description || "Done";
+          if (step.duration_ms) {
+            agentMap.current[id].duration = `${(step.duration_ms / 1000).toFixed(1)}s`;
+          }
+          if (step.log) {
+            agentMap.current[id].logs.push(step.log);
+          }
+        }
+        updateOrchestratorRun({
+          status: "running",
+          agents: Object.values(agentMap.current),
+          totalSteps: step.totalSteps || Object.keys(agentMap.current).length,
+          duration: null,
+        });
         const msg = `${step.agentIcon || "⚙️"} ${step.agentName || "Agent"}: ${step.description || "Step completed"}`;
         addMessage({
           role: "assistant",
@@ -99,7 +149,17 @@ export default function useSocket() {
 
       if (step.type === "orchestrator_complete") {
         const duration = step.duration_ms ? `${(step.duration_ms / 1000).toFixed(1)}s` : "";
-        const msg = ` Orchestration complete — ${step.totalSteps} steps, ${step.agents_used?.length || 0} agents${duration ? ` in ${duration}` : ""}.`;
+        // Mark all running agents as done
+        Object.values(agentMap.current).forEach((a) => {
+          if (a.status === "running") a.status = "done";
+        });
+        updateOrchestratorRun({
+          status: "done",
+          agents: Object.values(agentMap.current),
+          totalSteps: step.totalSteps || Object.keys(agentMap.current).length,
+          duration,
+        });
+        const msg = `✅ Orchestration complete — ${step.totalSteps} steps, ${step.agents_used?.length || 0} agents${duration ? ` in ${duration}` : ""}.`;
         addMessage({
           role: "assistant",
           text: msg,
@@ -131,7 +191,7 @@ export default function useSocket() {
 
     socketRef.current = socket;
     setSocketState({ socket, connected: socket.connected });
-  }, [addMessage, authToken, isAuthenticated]);
+  }, [addMessage, authToken, isAuthenticated, updateOrchestratorRun]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {

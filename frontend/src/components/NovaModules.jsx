@@ -4,17 +4,23 @@ import {
   AlertTriangle,
   ArrowLeft,
   BookOpen,
+  CheckCircle2,
+  Circle,
+  ClipboardList,
   FileText,
   Heart,
   Leaf,
   Phone,
+  Plus,
   Scale,
   ShieldAlert,
   Sprout,
   Stethoscope,
+  Trash2,
   Wind,
 } from "lucide-react";
 import {
+  apiClient,
   novaEmergencyContacts,
   novaEmergencyDisaster,
   novaEmergencyFirstAid,
@@ -59,6 +65,14 @@ const MODULES = [
     icon: ShieldAlert,
     color: "text-red-400",
     summary: "Offline-capable first aid, disaster guides, and emergency contacts.",
+  },
+  {
+    id: "task",
+    title: "Tasks",
+    label: "Tasks",
+    icon: ClipboardList,
+    color: "text-sky-400",
+    summary: "Manage your tasks, set priorities, and track progress.",
   },
 ];
 
@@ -119,8 +133,19 @@ function WellnessView() {
   const submitMood = async () => {
     setLoading((state) => ({ ...state, mood: true }));
     try {
+      // Call existing backend wellness endpoint
       const result = await novaWellnessMood(mood, note);
       setResponse(getBody(result));
+      // Also persist to the new module data API
+      try {
+        await apiClient.post("/mood-logs", {
+          mood,
+          note: note || null,
+          metrics: { source: "daily_checkin" },
+        });
+      } catch {
+        // Persistence is best-effort; the mood response still shows.
+      }
     } catch {
       setResponse({ response: "Connection error. Your mood note stayed on this screen for now." });
     } finally {
@@ -159,6 +184,9 @@ function WellnessView() {
           <Heart className="h-4 w-4 text-rose-400" />
           Daily check-in
         </h3>
+
+        {/* Mood trend sparkline */}
+        <MoodSparkline />
         <div className="grid grid-cols-5 gap-2 py-3">
           {MOODS.map((item) => (
             <button
@@ -697,11 +725,200 @@ function EmergencyView() {
   );
 }
 
+function TaskView() {
+  const [tasks, setTasks] = useState([]);
+  const [newTitle, setNewTitle] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTasks() {
+      try {
+        const data = await apiClient.get("/tasks");
+        if (mounted) setTasks(data.tasks || []);
+      } catch {
+        if (mounted) setTasks([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadTasks();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const addTask = async () => {
+    if (!newTitle.trim()) return;
+    try {
+      const data = await apiClient.post("/tasks", { title: newTitle.trim() });
+      setTasks((prev) => [data.task, ...prev]);
+      setNewTitle("");
+    } catch (err) {
+      console.error("Failed to add task:", err);
+    }
+  };
+
+  const toggleStatus = async (task) => {
+    const next = task.status === "done" ? "todo" : task.status === "todo" ? "in_progress" : "done";
+    try {
+      const data = await apiClient.patch(`/tasks/${task.id}`, { status: next });
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    } catch (err) {
+      console.error("Failed to update task:", err);
+    }
+  };
+
+  const deleteTask = async (taskId) => {
+    try {
+      await apiClient.delete(`/tasks/${taskId}`);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+    }
+  };
+
+  const filtered = filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+
+  const statusIcon = (status) => {
+    if (status === "done") return <CheckCircle2 className="h-4 w-4 text-leaf" />;
+    if (status === "in_progress") return <Circle className="h-4 w-4 text-amber" />;
+    return <Circle className="h-4 w-4 text-text-muted" />;
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      {/* Add task */}
+      <div className="nova-card">
+        <h3 className="nova-card-title">
+          <ClipboardList className="h-4 w-4 text-sky-400" />
+          Tasks
+        </h3>
+        <div className="flex gap-2">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+            placeholder="Add a new task..."
+            className="nova-input min-w-0 flex-1"
+          />
+          <button type="button" onClick={addTask} className="nova-btn-primary flex items-center gap-1">
+            <Plus className="h-3.5 w-3.5" /> Add
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        {["all", "todo", "in_progress", "done"].map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => setFilter(f)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-bold capitalize transition ${
+              filter === f
+                ? "border-sky-400/35 bg-sky-400/15 text-text"
+                : "border-line bg-white/[0.03] text-text-muted hover:text-text"
+            }`}
+          >
+            {f.replace("_", " ")}
+          </button>
+        ))}
+      </div>
+
+      {/* Task list */}
+      {loading ? (
+        <p className="text-sm text-text-muted">Loading tasks...</p>
+      ) : filtered.length === 0 ? (
+        <div className="nova-card text-center">
+          <p className="text-sm text-text-muted">No tasks {filter !== "all" ? `with status "${filter.replace("_", " ")}"` : "yet"}.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((task) => (
+            <div
+              key={task.id}
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition ${
+                task.status === "done"
+                  ? "border-leaf/20 bg-leaf/[0.04]"
+                  : "border-line bg-white/[0.03] hover:border-sky-400/20"
+              }`}
+            >
+              <button type="button" onClick={() => toggleStatus(task)} className="shrink-0">
+                {statusIcon(task.status)}
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-semibold ${task.status === "done" ? "text-text-muted line-through" : "text-text"}`}>
+                  {task.title}
+                </p>
+                {task.dueAt ? (
+                  <p className="mt-0.5 text-xs text-text-muted">Due: {new Date(task.dueAt).toLocaleDateString()}</p>
+                ) : null}
+              </div>
+              {task.priority && task.priority !== "medium" ? (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  task.priority === "high" || task.priority === "urgent"
+                    ? "bg-danger/15 text-danger"
+                    : "bg-aqua/15 text-aqua"
+                }`}>
+                  {task.priority}
+                </span>
+              ) : null}
+              <button type="button" onClick={() => deleteTask(task.id)} className="shrink-0 text-text-muted hover:text-danger transition">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** SVG sparkline showing the last 7 mood logs. */
+function MoodSparkline() {
+  const [points, setPoints] = useState([]);
+
+  useEffect(() => {
+    apiClient
+      .get("/mood-logs?limit=7")
+      .then((data) => {
+        const logs = (data.logs || []).slice(0, 7).reverse();
+        setPoints(logs.map((l) => l.mood));
+      })
+      .catch(() => {});
+  }, []);
+
+  if (points.length < 2) return null;
+
+  const width = 200;
+  const height = 36;
+  const maxMood = 10;
+  const step = width / (points.length - 1);
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${i * step},${height - (p / maxMood) * height}`)
+    .join(" ");
+
+  return (
+    <div className="mb-3 flex items-center gap-3">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-text-muted">7-day trend</span>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-9 w-48" preserveAspectRatio="none">
+        <path d={path} fill="none" stroke="var(--color-rose-400, #fb7185)" strokeWidth="2" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+
 const VIEW_MAP = {
   wellness: WellnessView,
   legal: LegalView,
   farm: FarmView,
   emergency: EmergencyView,
+  task: TaskView,
 };
 
 export default function NovaModules({ activeModule, onClose, onSelectModule }) {
@@ -738,7 +955,7 @@ export default function NovaModules({ activeModule, onClose, onSelectModule }) {
             </button>
           </div>
 
-          <nav className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <nav className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {moduleMeta.map((module) => {
               const Icon = module.icon;
               const selected = module.id === active.id;

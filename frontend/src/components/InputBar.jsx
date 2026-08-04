@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, Plus } from "lucide-react";
 import { VoiceButton } from "@/components/VoiceButton";
-import { analyzeContextImage } from "@/api/client";
+import { analyzeContextDocument, analyzeContextImage } from "@/api/client";
 import { useAppStore } from "@/store/appStore";
 
 export const InputBar = () => {
@@ -36,15 +36,16 @@ export const InputBar = () => {
 
     if (!file || disabled) return;
 
+    setContextBusy(true);
     try {
-      const content = await file.text();
+      const result = await analyzeContextDocument(file);
+      submitInput(result.prompt || `Requirements file: ${file.name}\n\n${result.text || result.summary || ""}`);
+    } catch (error) {
       submitInput(
-        `Requirements file: ${file.name}\n\n${content.slice(0, 12000)}`
+        `Requirements file upload failed for ${file.name}: ${error.message || "unknown error"}`
       );
-    } catch {
-      submitInput(
-        `Requirements file: ${file.name}\n\nBuild an autonomous AI product from this uploaded requirement.`
-      );
+    } finally {
+      setContextBusy(false);
     }
   };
 
@@ -109,7 +110,7 @@ export const InputBar = () => {
             ref={fileInputRef}
             type="file"
             className="hidden"
-            accept=".txt,.md,.markdown,.json,.csv,.yaml,.yml"
+            accept=".docx,.txt,.md,.markdown,.json,.csv,.yaml,.yml"
             onChange={handleFile}
           />
 
