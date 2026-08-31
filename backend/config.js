@@ -35,6 +35,15 @@ const PORT = envInt("PORT", 3001);
 const NODE_ENV = process.env.NODE_ENV || "development";
 const APP_VERSION = process.env.APP_VERSION || "2.0.0";
 const APP_NAME = "nova-voiceai";
+const TRUST_PROXY = process.env.TRUST_PROXY ? (process.env.TRUST_PROXY === "true" ? 1 : Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY) : (NODE_ENV === "production" ? 1 : false);
+const LOG_LEVEL = process.env.LOG_LEVEL || (NODE_ENV === "production" ? "info" : "debug");
+
+// ── Rate Limiting Tunables ──
+
+const RATE_LIMIT_AI_MAX = envInt("RATE_LIMIT_AI_MAX", 30);
+const RATE_LIMIT_AGENT_MAX = envInt("RATE_LIMIT_AGENT_MAX", 10);
+const RATE_LIMIT_AUTH_MAX = envInt("RATE_LIMIT_AUTH_MAX", 10);
+const RATE_LIMIT_GENERAL_MAX = envInt("RATE_LIMIT_GENERAL_MAX", 120);
 
 // ── CORS ──
 
@@ -67,13 +76,22 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 const GROQ_TIMEOUT_MS = envInt("GROQ_TIMEOUT_MS", 30_000);
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 const ANTHROPIC_API_VERSION = process.env.ANTHROPIC_API_VERSION || "2023-06-01";
+
+// ── Local AI Engines (Ollama / LM Studio) ──
+
+const OLLAMA_ENABLED = envBool("OLLAMA_ENABLED", false);
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+const LMSTUDIO_ENABLED = envBool("LMSTUDIO_ENABLED", false);
+const LMSTUDIO_BASE_URL = process.env.LMSTUDIO_BASE_URL || "http://localhost:1234/v1";
+const LMSTUDIO_MODEL = process.env.LMSTUDIO_MODEL || "local-model";
 
 // ── OpenAI (Whisper + Embeddings) ──
 
@@ -156,6 +174,14 @@ module.exports = {
   NODE_ENV,
   APP_VERSION,
   APP_NAME,
+  TRUST_PROXY,
+  LOG_LEVEL,
+
+  // Rate Limiting
+  RATE_LIMIT_AI_MAX,
+  RATE_LIMIT_AGENT_MAX,
+  RATE_LIMIT_AUTH_MAX,
+  RATE_LIMIT_GENERAL_MAX,
 
   // CORS
   CORS_ORIGINS,
@@ -184,6 +210,12 @@ module.exports = {
   ANTHROPIC_API_KEY,
   ANTHROPIC_MODEL,
   ANTHROPIC_API_VERSION,
+  OLLAMA_ENABLED,
+  OLLAMA_BASE_URL,
+  OLLAMA_MODEL,
+  LMSTUDIO_ENABLED,
+  LMSTUDIO_BASE_URL,
+  LMSTUDIO_MODEL,
 
   // OpenAI
   OPENAI_API_KEY,

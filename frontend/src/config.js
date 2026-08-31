@@ -17,11 +17,12 @@ export const STORE_KEY = "voxmind-store";
 
 // ── AI Models ──
 
-export const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+export const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 export const MODEL_OPTIONS = [
-  { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", provider: "groq" },
-  { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Fast)", provider: "groq" },
+  { value: "openai/gpt-oss-120b", label: "GPT-OSS 120B", provider: "groq" },
+  { value: "qwen/qwen3.8-27b", label: "Qwen 3.8 27B", provider: "groq" },
+  { value: "openai/gpt-oss-20b", label: "GPT-OSS 20B (Fast)", provider: "groq" },
   { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", provider: "gemini" },
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "gemini" },
   { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" },
