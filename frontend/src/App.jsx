@@ -65,11 +65,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Font size
+  // Accessibility and display modes
   useEffect(() => {
-    document.documentElement.classList.remove("fs-small", "fs-medium", "fs-large");
+    document.documentElement.classList.remove(
+      "fs-small",
+      "fs-medium",
+      "fs-large",
+      "access-large-text",
+      "high-contrast"
+    );
     document.documentElement.classList.add(`fs-${settings.fontSize || "medium"}`);
-  }, [settings.fontSize]);
+    if (settings.largeTextMode) {
+      document.documentElement.classList.add("access-large-text");
+    }
+    if (settings.highContrastMode) {
+      document.documentElement.classList.add("high-contrast");
+    }
+  }, [settings.fontSize, settings.highContrastMode, settings.largeTextMode]);
 
   const handlePrompt = (prompt) => {
     if (!isLoading) processUserInput(prompt);

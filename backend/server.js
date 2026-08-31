@@ -41,12 +41,14 @@ const {
 const { validateEnv } = require("./middleware/validateEnv");
 const { authMiddleware } = require("./middleware/auth");
 const { sanitizeMiddleware } = require("./middleware/sanitize");
+const { requestIdMiddleware } = require("./middleware/requestId");
 const { aiLimiter, agentLimiter, authLimiter, generalLimiter } = require("./middleware/rateLimit");
 const authRouter = require("./routes/auth");
 const moduleDataRouter = require("./routes/module-data");
 const backgroundAgent = require("./services/backgroundAgent");
 const { safetyMiddleware } = require("./middleware/safety");
 const { registry: skillRegistry } = require("./services/skills");
+const logger = require("./services/logger");
 
 // ── Validate environment ──
 validateEnv();
@@ -56,12 +58,53 @@ const PORT = config.PORT;
 const app = express();
 const server = http.createServer(app);
 
+// ── Trust Proxy ──
+if (config.TRUST_PROXY) {
+  app.set("trust proxy", config.TRUST_PROXY);
+}
+
+// ── Operational Metrics ──
+const metrics = {
+  requestsTotal: 0,
+  requestsByStatus: {},
+  startTime: Date.now(),
+};
+
 // ── Middleware ──
+app.use(requestIdMiddleware);
 app.use(cors({ origin: config.CORS_ORIGINS, credentials: true }));
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sanitizeMiddleware);
+
+// Structured request logger & metrics tracker
+app.use((req, res, next) => {
+  const start = Date.now();
+  metrics.requestsTotal += 1;
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const statusCode = res.statusCode;
+    const bucket = `${Math.floor(statusCode / 100)}xx`;
+    metrics.requestsByStatus[bucket] = (metrics.requestsByStatus[bucket] || 0) + 1;
+
+    // Log request (skip noisy health check in debug)
+    if (req.path !== "/health" || statusCode >= 400) {
+      logger.info(`${req.method} ${req.path} ${statusCode} (${duration}ms)`, {
+        requestId: req.id,
+        method: req.method,
+        path: req.path,
+        status: statusCode,
+        durationMs: duration,
+        ip: req.ip,
+      });
+    }
+  });
+
+  next();
+});
+
 app.use(authMiddleware);
 
 // Multer for audio uploads
@@ -100,12 +143,6 @@ const imageUpload = multer({
 const documentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.FILE_SIZE_LIMITS.agentFile },
-});
-
-// Request logger
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
 });
 
 // ── Routine workflow (used by routines run + scheduler) ──
@@ -154,6 +191,22 @@ app.get("/health", (req, res) => {
     memory: getMemoryStatus ? getMemoryStatus() : undefined,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+  });
+});
+
+app.get("/metrics", (req, res) => {
+  const memoryUsage = process.memoryUsage();
+  res.json({
+    status: "ok",
+    uptimeSeconds: Math.floor(process.uptime()),
+    requestsTotal: metrics.requestsTotal,
+    requestsByStatus: metrics.requestsByStatus,
+    memory: {
+      rssMb: Math.round(memoryUsage.rss / 1024 / 1024),
+      heapTotalMb: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+      heapUsedMb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+    },
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -661,5 +714,23 @@ server.listen(PORT, () => {
   backgroundAgent.registerBuiltinAgents();
   backgroundAgent.startScheduler(io, config.DEFAULT_USER_ID);
 });
+
+// ── Graceful Shutdown ──
+function gracefulShutdown(signal) {
+  logger.info(`Received ${signal}. Starting graceful shutdown...`);
+  server.close(() => {
+    logger.info("HTTP server closed.");
+    process.exit(0);
+  });
+
+  // Force shutdown after 10s if hanging
+  setTimeout(() => {
+    logger.error("Forced shutdown after timeout.");
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 module.exports = { app, server };

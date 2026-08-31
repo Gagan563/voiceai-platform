@@ -7,13 +7,44 @@ import axios from "axios";
 // Android emulator: 10.0.2.2 = host localhost
 // iOS simulator: localhost works
 // Real device: use your machine's LAN IP
-const BASE_URL = "http://10.0.2.2:3001";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:3001";
+
+let authToken = null;
+
+export function setAuthToken(token) {
+  authToken = token;
+}
 
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
   headers: { "Content-Type": "application/json" },
 });
+
+api.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
+export async function login(email, password) {
+  const { data } = await api.post("/api/auth/login", { email, password });
+  if (data?.token) setAuthToken(data.token);
+  return data;
+}
+
+export async function register(email, password, name) {
+  const { data } = await api.post("/api/auth/register", { email, password, name });
+  if (data?.token) setAuthToken(data.token);
+  return data;
+}
+
+export async function logout() {
+  setAuthToken(null);
+  const { data } = await api.post("/api/auth/logout");
+  return data;
+}
 
 export async function healthCheck() {
   const { data } = await api.get("/health");

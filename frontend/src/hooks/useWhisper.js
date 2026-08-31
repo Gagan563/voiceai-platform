@@ -14,7 +14,7 @@ import { transcribeAudio } from "../api/client";
  *   error          — error message string or null
  *   isSupported    — true if the browser supports MediaRecorder
  */
-export default function useWhisper() {
+export default function useWhisper({ silenceTimeoutMs = 2000 } = {}) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -28,6 +28,7 @@ export default function useWhisper() {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const silenceStartRef = useRef(null);
+  const silenceTimeoutRef = useRef(silenceTimeoutMs);
   const rafIdRef = useRef(null);
 
   const isSupported =
@@ -35,6 +36,13 @@ export default function useWhisper() {
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia &&
     !!window.MediaRecorder;
+
+  useEffect(() => {
+    const timeout = Number(silenceTimeoutMs);
+    silenceTimeoutRef.current = Number.isFinite(timeout)
+      ? Math.min(Math.max(timeout, 1000), 5000)
+      : 2000;
+  }, [silenceTimeoutMs]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -80,7 +88,7 @@ export default function useWhisper() {
       if (isSilent) {
         if (!silenceStartRef.current) {
           silenceStartRef.current = Date.now();
-        } else if (Date.now() - silenceStartRef.current > 2000) {
+        } else if (Date.now() - silenceStartRef.current > silenceTimeoutRef.current) {
           // 2 seconds of silence — auto-stop
           stopRecording();
           return;

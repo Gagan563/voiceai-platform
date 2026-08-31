@@ -12,7 +12,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
  *   setSelectedVoice — set the voice to use
  *   isSupported      — true if the browser supports speechSynthesis
  */
-export default function useTTS() {
+export default function useTTS({ rate = 1.0 } = {}) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voices, setVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState(null);
@@ -78,7 +78,10 @@ export default function useTTS() {
         utterance.voice = selectedVoice;
       }
 
-      utterance.rate = 1.0;
+      const safeRate = Number.isFinite(Number(rate))
+        ? Math.min(Math.max(Number(rate), 0.5), 2.0)
+        : 1.0;
+      utterance.rate = safeRate;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
 
@@ -95,7 +98,7 @@ export default function useTTS() {
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     },
-    [isSupported, selectedVoice]
+    [isSupported, selectedVoice, rate]
   );
 
   /**

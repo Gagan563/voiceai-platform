@@ -55,9 +55,67 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 apiClient.interceptors.response.use(
   (response) => response.data,
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Auto-refresh on 401 (skip auth routes themselves to prevent loop)
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes("/auth/")
+    ) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            if (token) originalRequest.headers["Authorization"] = `Bearer ${token}`;
+            return apiClient(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const base = BASE_URL === "/api" ? "/api" : `${BASE_URL.replace(/\/$/, "")}/api`;
+        const refreshRes = await axios.post(
+          `${base}/auth/refresh`,
+          {},
+          { withCredentials: true }
+        );
+        const newToken = refreshRes.data?.token;
+        if (newToken) {
+          setRuntimeAuthToken(newToken);
+          processQueue(null, newToken);
+          originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
+          return apiClient(originalRequest);
+        }
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
     const message =
       error.response?.data?.message ||
       error.response?.data?.error ||

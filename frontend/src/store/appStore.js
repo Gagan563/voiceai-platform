@@ -223,6 +223,28 @@ const humanAutopilotMessage = (approvalRequired) =>
     ? "This touches coding or developer tools, so I'll pause here for your approval before I run it."
     : "No coding approval needed here. I'll go ahead and do it.";
 
+const formatPlanForSpeech = (plan = [], intent = {}) => {
+  const goal = intent.goal || "this request";
+  const runnableCount = plan.filter((step) => !step.requires_input).length;
+  const blockedCount = plan.length - runnableCount;
+  const stepSummary = plan
+    .slice(0, 5)
+    .map((step, index) => `${index + 1}. ${step.description || step.action || "Complete this step"}`)
+    .join(" ");
+  const blockedText = blockedCount
+    ? ` ${blockedCount} step${blockedCount === 1 ? "" : "s"} need more information before they can run.`
+    : "";
+
+  return `Plan review for ${goal}. I will do ${plan.length} step${plan.length === 1 ? "" : "s"}: ${stepSummary}.${blockedText}`;
+};
+
+const getPlanSpeechDelayMs = (text = "", rate = 1) => {
+  const words = String(text).trim().split(/\s+/).filter(Boolean).length;
+  const safeRate = Number.isFinite(Number(rate)) ? Math.min(Math.max(Number(rate), 0.5), 2) : 1;
+  const wordsPerMinute = 155 * safeRate;
+  return Math.min(Math.max((words / wordsPerMinute) * 60_000 + 900, 1800), 12_000);
+};
+
 const titleFromGoal = (goal = "AI workspace") => {
   const clean = goal
     .replace(/\b(build|create|make|generate|develop)\b/gi, "")
@@ -785,12 +807,24 @@ export const useAppStore = create(
           }
 
           const explicitBuild = isExplicitBuildRequest(effectiveText) || isExplicitBuildRequest(intent.goal);
+          const currentSettings = get().settings;
+          const planReviewText = currentSettings.speakPlansAloud
+            ? formatPlanForSpeech(plan, intent)
+            : "";
+          const speechDelayMs =
+            currentSettings.ttsEnabled && currentSettings.speakPlansAloud
+              ? getPlanSpeechDelayMs(planReviewText, currentSettings.speechRate)
+              : 500;
 
           if (explicitBuild) {
+            const buildMessage = planReviewText
+              ? `${planReviewText}\n\nBuilding it now. I'll use sensible defaults and put the result in the preview.`
+              : "Building it now. I'll use sensible defaults and put the result in the preview.";
+
             get().addMessage({
               role: "assistant",
-              text: "Building it now. I'll use sensible defaults and put the result in the preview.",
-              content: "Building it now. I'll use sensible defaults and put the result in the preview.",
+              text: buildMessage,
+              content: buildMessage,
               type: "autopilot",
               timestamp: Date.now(),
             });
@@ -802,10 +836,10 @@ export const useAppStore = create(
                 intent,
                 sourceText: clean,
                 plan,
-                status: "building",
+                status: currentSettings.ttsEnabled && currentSettings.speakPlansAloud ? "planned" : "building",
               }),
-              isLoading: true,
-              loadingStage: "execute",
+              isLoading: false,
+              loadingStage: null,
             });
 
             const runnableIds = plan
@@ -839,6 +873,20 @@ export const useAppStore = create(
               get()._snapshotSession();
               return;
             }
+
+            if (currentSettings.ttsEnabled && currentSettings.speakPlansAloud) {
+              await new Promise((resolve) => setTimeout(resolve, speechDelayMs));
+              if (get().currentPlan !== plan) return;
+            }
+
+            set({
+              previewArtifact: createPreviewArtifact({
+                intent,
+                sourceText: clean,
+                plan,
+                status: "building",
+              }),
+            });
             await get().approvePlan(runnableIds);
             return;
           }
@@ -871,7 +919,9 @@ export const useAppStore = create(
           });
 
           if (approvalRequired) {
-            const approvalMessage = humanAutopilotMessage(true);
+            const approvalMessage = planReviewText
+              ? `${planReviewText}\n\n${humanAutopilotMessage(true)}`
+              : humanAutopilotMessage(true);
             get().addMessage({
               role: "assistant",
               text: approvalMessage,
@@ -880,7 +930,9 @@ export const useAppStore = create(
               timestamp: Date.now(),
             });
           } else {
-            const autopilotMessage = humanAutopilotMessage(false);
+            const autopilotMessage = planReviewText
+              ? `${planReviewText}\n\n${humanAutopilotMessage(false)}`
+              : humanAutopilotMessage(false);
             get().addMessage({
               role: "assistant",
               text: autopilotMessage,
@@ -890,11 +942,12 @@ export const useAppStore = create(
             });
 
             setTimeout(() => {
+              if (get().currentPlan !== plan) return;
               const runnableIds = plan
                 .filter((step) => !step.requires_input)
                 .map((step) => step.id);
               get().approvePlan(runnableIds);
-            }, 500);
+            }, speechDelayMs);
           }
         } catch (error) {
           const message = getErrorMessage(

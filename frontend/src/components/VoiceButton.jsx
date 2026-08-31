@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/appStore";
 
 export const VoiceButton = () => {
   const isLoading = useAppStore((state) => state.isLoading);
+  const vadSilenceTimeout = useAppStore((state) => state.settings.vadSilenceTimeout);
   const setRecording = useAppStore((state) => state.setRecording);
   const submitInput = useAppStore((state) => state.submitInput);
   const {
@@ -17,7 +18,7 @@ export const VoiceButton = () => {
     stopRecording,
     error,
     isSupported,
-  } = useWhisper();
+  } = useWhisper({ silenceTimeoutMs: vadSilenceTimeout });
   const lastSubmittedTranscript = useRef("");
 
   useEffect(() => {

@@ -6,14 +6,14 @@
 // Uses express-rate-limit which is already in package.json.
 
 const rateLimit = require("express-rate-limit");
+const config = require("../config");
 
 /**
  * AI endpoints — expensive (costs real API credits).
- * 30 requests per minute per IP.
  */
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: config.RATE_LIMIT_AI_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -25,11 +25,10 @@ const aiLimiter = rateLimit({
 
 /**
  * Agent endpoints — very expensive (multi-turn AI loops).
- * 10 requests per minute per IP.
  */
 const agentLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: config.RATE_LIMIT_AGENT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -41,11 +40,10 @@ const agentLimiter = rateLimit({
 
 /**
  * Auth endpoints — brute-force protection.
- * 10 attempts per 15 minutes per IP.
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: config.RATE_LIMIT_AUTH_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -56,11 +54,10 @@ const authLimiter = rateLimit({
 
 /**
  * General API — generous limit for normal endpoints.
- * 120 requests per minute per IP.
  */
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: config.RATE_LIMIT_GENERAL_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

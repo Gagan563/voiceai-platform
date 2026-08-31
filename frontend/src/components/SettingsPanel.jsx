@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Accessibility,
   AlertTriangle,
   Bot,
   CheckCircle2,
   Cpu,
+  Eye,
+  Gauge,
   KeyRound,
   Palette,
   Plug,
   Save,
   Trash2,
+  Timer,
   Volume2,
   X,
 } from "lucide-react";
@@ -60,6 +64,57 @@ function Section({ icon: Icon, title, children }) {
       </div>
       <div className="space-y-3">{children}</div>
     </section>
+  );
+}
+
+function ToggleRow({ icon: Icon, label, checked, onToggle }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-[rgba(255,255,255,0.06)] bg-[var(--vox-bg)] px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon className="h-4 w-4 shrink-0 text-brand" />
+        <span className="truncate text-sm text-text">{label}</span>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+          checked ? "bg-brand" : "bg-[rgba(255,255,255,0.12)]"
+        }`}
+        aria-pressed={checked}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+            checked ? "translate-x-[22px]" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function RangeField({ icon: Icon, label, value, min, max, step, suffix, onChange }) {
+  return (
+    <label className="grid gap-2 rounded-lg border border-[rgba(255,255,255,0.06)] bg-[var(--vox-bg)] px-3 py-2.5">
+      <span className="flex items-center justify-between gap-3 text-sm text-text">
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-brand" />
+          {label}
+        </span>
+        <span className="font-code text-xs text-text-muted">
+          {value}
+          {suffix}
+        </span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="accent-[var(--vox-primary)]"
+      />
+    </label>
   );
 }
 
@@ -191,30 +246,39 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
               {/* Voice & TTS */}
               <Section icon={Volume2} title="Voice & TTS">
-                <div className="flex items-center justify-between rounded-lg border border-[rgba(255,255,255,0.06)] bg-[var(--vox-bg)] px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <Volume2 className="h-4 w-4 text-brand" />
-                    <span className="text-sm text-text">Text-to-Speech</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleTtsEnabled}
-                    className={`relative h-6 w-11 rounded-full transition ${
-                      settings.ttsEnabled
-                        ? "bg-brand"
-                        : "bg-[rgba(255,255,255,0.12)]"
-                    }`}
-                    aria-pressed={settings.ttsEnabled}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                        settings.ttsEnabled
-                          ? "translate-x-[22px]"
-                          : "translate-x-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
+                <ToggleRow
+                  icon={Volume2}
+                  label="Text-to-Speech"
+                  checked={settings.ttsEnabled}
+                  onToggle={toggleTtsEnabled}
+                />
+                <ToggleRow
+                  icon={Accessibility}
+                  label="Speak plans before execution"
+                  checked={settings.speakPlansAloud}
+                  onToggle={() => setSetting("speakPlansAloud", !settings.speakPlansAloud)}
+                />
+
+                <RangeField
+                  icon={Timer}
+                  label="Silence timeout"
+                  value={Number(settings.vadSilenceTimeout || 2000) / 1000}
+                  min={1}
+                  max={5}
+                  step={0.1}
+                  suffix="s"
+                  onChange={(value) => setSetting("vadSilenceTimeout", Math.round(value * 1000))}
+                />
+                <RangeField
+                  icon={Gauge}
+                  label="Speech rate"
+                  value={Number(settings.speechRate || 1).toFixed(1)}
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  suffix="x"
+                  onChange={(value) => setSetting("speechRate", value)}
+                />
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -261,6 +325,18 @@ export default function SettingsPanel({ isOpen, onClose }) {
                   <option value="medium">Medium font</option>
                   <option value="large">Large font</option>
                 </select>
+                <ToggleRow
+                  icon={Accessibility}
+                  label="Large text mode"
+                  checked={settings.largeTextMode}
+                  onToggle={() => setSetting("largeTextMode", !settings.largeTextMode)}
+                />
+                <ToggleRow
+                  icon={Eye}
+                  label="High contrast"
+                  checked={settings.highContrastMode}
+                  onToggle={() => setSetting("highContrastMode", !settings.highContrastMode)}
+                />
               </Section>
 
               {/* Danger Zone */}

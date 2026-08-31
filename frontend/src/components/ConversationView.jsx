@@ -156,8 +156,8 @@ export default function ConversationView() {
   const prevMessageCountRef = useRef(messages.length);
 
   // TTS hooks
-  const browserTTS = useTTS();
-  const elevenLabsTTS = useElevenLabs();
+  const browserTTS = useTTS({ rate: settings.speechRate });
+  const elevenLabsTTS = useElevenLabs({ rate: settings.speechRate });
 
   const activeTTS = settings.ttsMode === "elevenlabs" ? elevenLabsTTS : browserTTS;
 

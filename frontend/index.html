@@ -3,13 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
     <meta
       name="description"
-      content="NOVA AI Studio — Build your ideas with NOVA. Voice-first AI workspace."
+      content="NOVA AI Studio — Local-first, voice-first AI workspace. Fast plan-execute agents, memory, life modules, and autonomous code generation."
     />
     <meta name="theme-color" content="#131314" />
-    <title>NOVA AI Studio</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NOVA — Voice AI Platform" />
+    <meta property="og:description" content="Local-first, voice-first AI workspace and life companion with autonomous agent workflows." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="NOVA — Voice AI Platform" />
+    <meta name="twitter:description" content="Local-first, voice-first AI workspace and life companion." />
+
+    <title>NOVA — Voice AI Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -20,5 +34,12 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ("serviceWorker" in navigator && window.location.protocol === "https:") {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>

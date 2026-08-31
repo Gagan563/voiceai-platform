@@ -12,6 +12,7 @@ build/
 .next/
 out/
 backend/agent-output/
+backend/public/
 backend/uploads/
 backend/data/
 

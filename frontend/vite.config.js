@@ -19,10 +19,31 @@ export default defineConfig(({ mode }) => {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    target: "esnext",
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("react") || id.includes("react-dom")) return "vendor-react";
+            if (id.includes("framer-motion")) return "vendor-motion";
+            if (id.includes("lucide-react")) return "vendor-icons";
+            return "vendor";
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     proxy: {
       "/health": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/metrics": {
         target: backendTarget,
         changeOrigin: true,
       },

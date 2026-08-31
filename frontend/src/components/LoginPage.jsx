@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  Eye,
+  EyeOff,
   Fingerprint,
   KeyRound,
   LockKeyhole,
@@ -22,6 +24,7 @@ export default function LoginPage() {
   const login = useAppStore((state) => state.login);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState(quickRoles[0]);
   const [error, setError] = useState("");
@@ -159,7 +162,7 @@ export default function LoginPage() {
                 <div className="flex h-11 items-center gap-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[var(--vox-bg)] px-3 focus-within:border-brand/40">
                   <KeyRound className="h-4 w-4 text-text-muted" />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => {
                       setPassword(event.target.value);
@@ -169,6 +172,14 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-text-muted transition hover:text-text"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </label>
 

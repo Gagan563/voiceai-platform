@@ -11,13 +11,14 @@ import { useState, useRef, useCallback, useEffect } from "react";
  *   error          — error message string or null
  *   isSupported    — true if the browser supports Web Speech API
  */
-export default function useVoice() {
+export default function useVoice({ silenceTimeoutMs = 2000 } = {}) {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState(null);
 
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
+  const silenceTimeoutRef = useRef(silenceTimeoutMs);
   const finalTranscriptRef = useRef("");
 
   // Check browser support
@@ -27,6 +28,13 @@ export default function useVoice() {
       : null;
 
   const isSupported = !!SpeechRecognition;
+
+  useEffect(() => {
+    const timeout = Number(silenceTimeoutMs);
+    silenceTimeoutRef.current = Number.isFinite(timeout)
+      ? Math.min(Math.max(timeout, 1000), 5000)
+      : 2000;
+  }, [silenceTimeoutMs]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -56,7 +64,7 @@ export default function useVoice() {
       if (recognitionRef.current && isRecording) {
         recognitionRef.current.stop();
       }
-    }, 2000);
+    }, silenceTimeoutRef.current);
   }, [isRecording]);
 
   /**

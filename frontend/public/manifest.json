@@ -1,0 +1,19 @@
+{
+  "name": "NOVA AI Studio",
+  "short_name": "NOVA",
+  "description": "Voice-first, local-first AI workspace and life platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#131314",
+  "theme_color": "#131314",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities", "ai"]
+}

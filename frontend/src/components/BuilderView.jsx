@@ -363,8 +363,8 @@ export default function BuilderView({ onBack, onOpenPanel }) {
   const setSpeakingMessageId = useAppStore((s) => s.setSpeakingMessageId);
   const lastIntent = useAppStore((s) => s.lastIntent);
 
-  const browserTTS = useTTS();
-  const elevenLabsTTS = useElevenLabs();
+  const browserTTS = useTTS({ rate: settings.speechRate });
+  const elevenLabsTTS = useElevenLabs({ rate: settings.speechRate });
   const activeTTS = settings.ttsMode === "elevenlabs" ? elevenLabsTTS : browserTTS;
   const prevCount = useRef(messages.length);
 

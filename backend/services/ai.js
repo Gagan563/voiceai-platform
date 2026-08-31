@@ -36,6 +36,17 @@ function isCircuitOpen(provider) {
   return true;
 }
 
+/**
+ * Force-reset a provider's circuit breaker. Used when we know the key
+ * IS configured and want to retry despite previous failures.
+ */
+function resetCircuit(provider) {
+  const breaker = breakerFor(provider);
+  breaker.failures = 0;
+  breaker.openedAt = 0;
+  breaker.lastError = null;
+}
+
 function recordSuccess(provider) {
   const breaker = breakerFor(provider);
   breaker.failures = 0;
@@ -54,7 +65,7 @@ function recordFailure(provider, error) {
 
 function providerStatus() {
   return Object.fromEntries(
-    ["groq", "gemini", "anthropic"].map((provider) => {
+    ["groq", "gemini", "anthropic", "ollama", "lmstudio"].map((provider) => {
       const breaker = breakerFor(provider);
       return [
         provider,
@@ -79,6 +90,12 @@ function isProviderConfigured(provider) {
   if (provider === "anthropic") {
     return Boolean(config.ANTHROPIC_API_KEY && config.ANTHROPIC_API_KEY.length > 10);
   }
+  if (provider === "ollama") {
+    return Boolean(config.OLLAMA_ENABLED && config.OLLAMA_BASE_URL);
+  }
+  if (provider === "lmstudio") {
+    return Boolean(config.LMSTUDIO_ENABLED && config.LMSTUDIO_BASE_URL);
+  }
   return false;
 }
 
@@ -87,20 +104,19 @@ function providerOrder(options = {}) {
 
   const mode = config.AI_ROUTER_MODE;
 
-  // Single-provider modes: force one provider as primary with ordered fallbacks.
-  if (mode === "groq") return ["groq", "gemini", "anthropic"];
-  if (mode === "gemini") return ["gemini", "groq", "anthropic"];
-  if (mode === "anthropic") return ["anthropic", "groq", "gemini"];
+  // Local / Single-provider modes
+  if (mode === "local" || mode === "ollama") return ["ollama", "lmstudio", "groq", "gemini", "anthropic"];
+  if (mode === "lmstudio") return ["lmstudio", "ollama", "groq", "gemini", "anthropic"];
+  if (mode === "groq") return ["groq", "gemini", "anthropic", "ollama"];
+  if (mode === "gemini") return ["gemini", "groq", "anthropic", "ollama"];
+  if (mode === "anthropic") return ["anthropic", "groq", "gemini", "ollama"];
 
   // Hybrid mode (default): route by task complexity.
-  // - Deep reasoning (agent, code, large context) → Gemini primary, Anthropic secondary
-  // - Fast/cheap tasks (chat, intent, review)     → Groq primary, Gemini secondary
-  // - Anthropic is always the final fallback
   const task = options.task || "general";
   const needsDeepReasoning = task === "agent" || task === "code" || options.maxTokens > 4096;
   return needsDeepReasoning
-    ? ["gemini", "anthropic", "groq"]
-    : ["groq", "gemini", "anthropic"];
+    ? ["gemini", "anthropic", "groq", "ollama", "lmstudio"]
+    : ["groq", "gemini", "ollama", "lmstudio", "anthropic"];
 }
 
 function getGeminiModel() {
@@ -360,10 +376,127 @@ async function callAnthropicMultiTurn(systemPrompt, messages, options = {}) {
     .trim();
 }
 
+async function callOllama(systemPrompt, userMessage, options = {}) {
+  return callOllamaMessages(
+    systemPrompt,
+    [{ role: "user", content: userMessage }],
+    options
+  );
+}
+
+async function callOllamaMultiTurn(systemPrompt, messages, options = {}) {
+  return callOllamaMessages(systemPrompt, messages, {
+    ...options,
+    maxTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.multiTurn,
+  });
+}
+
+async function callOllamaMessages(systemPrompt, messages, options = {}) {
+  const baseUrl = config.OLLAMA_BASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: options.model || config.OLLAMA_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages.map((msg) => ({
+          role: msg.role === "assistant" || msg.role === "model" ? "assistant" : "user",
+          content: msg.content,
+        })),
+      ],
+      stream: false,
+      format: options.json ? "json" : undefined,
+      options: {
+        temperature: options.temperature ?? 0.7,
+        num_predict: options.maxTokens || config.DEFAULT_MAX_TOKENS.chat,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Ollama request failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  return data.message?.content?.trim() || "";
+}
+
+async function callLMStudio(systemPrompt, userMessage, options = {}) {
+  return callLMStudioMessages(
+    systemPrompt,
+    [{ role: "user", content: userMessage }],
+    options
+  );
+}
+
+async function callLMStudioMultiTurn(systemPrompt, messages, options = {}) {
+  return callLMStudioMessages(systemPrompt, messages, {
+    ...options,
+    maxTokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.multiTurn,
+  });
+}
+
+async function callLMStudioMessages(systemPrompt, messages, options = {}) {
+  const baseUrl = config.LMSTUDIO_BASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: options.model || config.LMSTUDIO_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages.map((msg) => ({
+          role: msg.role === "assistant" || msg.role === "model" ? "assistant" : "user",
+          content: msg.content,
+        })),
+      ],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxTokens || config.DEFAULT_MAX_TOKENS.chat,
+      response_format: options.json ? { type: "json_object" } : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`LM Studio request failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
+async function callProvider(provider, callType, systemPrompt, payload, options) {
+  if (provider === "groq") {
+    return callType === "multi"
+      ? await callGroqMultiTurn(systemPrompt, payload, options)
+      : await callGroq(systemPrompt, payload, options);
+  } else if (provider === "gemini") {
+    return callType === "multi"
+      ? await callGeminiMultiTurn(systemPrompt, payload, options)
+      : await callGemini(systemPrompt, payload, options);
+  } else if (provider === "anthropic") {
+    return callType === "multi"
+      ? await callAnthropicMultiTurn(systemPrompt, payload, options)
+      : await callAnthropic(systemPrompt, payload, options);
+  } else if (provider === "ollama") {
+    return callType === "multi"
+      ? await callOllamaMultiTurn(systemPrompt, payload, options)
+      : await callOllama(systemPrompt, payload, options);
+  } else if (provider === "lmstudio") {
+    return callType === "multi"
+      ? await callLMStudioMultiTurn(systemPrompt, payload, options)
+      : await callLMStudio(systemPrompt, payload, options);
+  }
+  throw new Error(`Unknown provider: ${provider}`);
+}
+
 async function routeCall(callType, systemPrompt, payload, options = {}) {
   const errors = [];
+  const order = providerOrder(options);
 
-  for (const provider of providerOrder(options)) {
+  for (const provider of order) {
     if (!isProviderConfigured(provider)) {
       errors.push(`${provider}: not configured`);
       continue;
@@ -374,23 +507,7 @@ async function routeCall(callType, systemPrompt, payload, options = {}) {
     }
 
     try {
-      let text;
-      if (provider === "groq") {
-        text =
-          callType === "multi"
-            ? await callGroqMultiTurn(systemPrompt, payload, options)
-            : await callGroq(systemPrompt, payload, options);
-      } else if (provider === "gemini") {
-        text =
-          callType === "multi"
-            ? await callGeminiMultiTurn(systemPrompt, payload, options)
-            : await callGemini(systemPrompt, payload, options);
-      } else {
-        text =
-          callType === "multi"
-            ? await callAnthropicMultiTurn(systemPrompt, payload, options)
-            : await callAnthropic(systemPrompt, payload, options);
-      }
+      const text = await callProvider(provider, callType, systemPrompt, payload, options);
       recordSuccess(provider);
       return text;
     } catch (error) {
@@ -399,8 +516,28 @@ async function routeCall(callType, systemPrompt, payload, options = {}) {
     }
   }
 
+  // ── Half-open retry: if any provider has a key, reset its circuit
+  //    and try ONE more time before giving up to mock AI. ──
+  const configuredWithCircuitOpen = order.filter(
+    (p) => isProviderConfigured(p) && isCircuitOpen(p)
+  );
+
+  if (configuredWithCircuitOpen.length > 0) {
+    const retryProvider = configuredWithCircuitOpen[0];
+    console.log(`[AI] Half-open retry with ${retryProvider}`);
+    resetCircuit(retryProvider);
+    try {
+      const text = await callProvider(retryProvider, callType, systemPrompt, payload, options);
+      recordSuccess(retryProvider);
+      return text;
+    } catch (error) {
+      recordFailure(retryProvider, error);
+      errors.push(`${retryProvider} (retry): ${error.message}`);
+    }
+  }
+
   // ── Mock AI fallback — no real provider available ──
-  console.log("[AI] All providers unavailable, using mock AI fallback");
+  console.warn(`[AI] All providers failed (${errors.length} errors), using mock AI fallback`);
   if (callType === "multi") {
     return mockAI.chatMultiTurn(systemPrompt, payload);
   }
@@ -416,9 +553,19 @@ async function chatMultiTurn(systemPrompt, messages, options = {}) {
 }
 
 async function chatJSON(systemPrompt, userMessage, options = {}) {
-  // If no real provider is available, use mock AI directly for JSON
-  if (!hasRealProvider()) {
+  // If no real provider key is even configured, use mock AI directly.
+  // But if a key IS configured (just circuit-tripped), reset and try.
+  const anyKeyConfigured = ["groq", "gemini", "anthropic"].some(isProviderConfigured);
+  if (!anyKeyConfigured) {
     return mockAI.chatJSON(systemPrompt, userMessage);
+  }
+
+  // Reset tripped circuits for configured providers so we always try real AI
+  for (const p of ["groq", "gemini", "anthropic"]) {
+    if (isProviderConfigured(p) && isCircuitOpen(p)) {
+      console.log(`[AI] chatJSON: resetting circuit for ${p} to ensure real AI response`);
+      resetCircuit(p);
+    }
   }
 
   const text = await routeCall("single", systemPrompt, userMessage, {

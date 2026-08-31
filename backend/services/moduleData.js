@@ -9,12 +9,19 @@
  */
 
 let prisma = null;
+let pool = null;
 
 function db() {
   if (prisma) return prisma;
   try {
     const { PrismaClient } = require("@prisma/client");
-    prisma = new PrismaClient();
+    const { PrismaPg } = require("@prisma/adapter-pg");
+    const { Pool } = require("pg");
+    const config = require("../config");
+
+    pool = new Pool({ connectionString: config.DATABASE_URL });
+    const adapter = new PrismaPg(pool);
+    prisma = new PrismaClient({ adapter });
     return prisma;
   } catch {
     return null;

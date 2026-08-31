@@ -38,13 +38,22 @@ function validateEnv() {
     console.warn("");
   }
 
-  // Validate JWT_SECRET is not the default in production
-  if (
-    env === "production" &&
-    process.env.JWT_SECRET === config.JWT_SECRET_PLACEHOLDER
-  ) {
-    console.error(" JWT_SECRET is still the default placeholder. Set a real secret.");
-    process.exit(1);
+  // Validate JWT_SECRET is not the default and meets length in production
+  if (env === "production") {
+    if (process.env.JWT_SECRET === config.JWT_SECRET_PLACEHOLDER) {
+      console.error("❌ JWT_SECRET is still the default placeholder. Set a real secret.");
+      process.exit(1);
+    }
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+      console.error("❌ JWT_SECRET must be at least 32 characters long in production.");
+      process.exit(1);
+    }
+    if (config.CONNECTOR_DEMO_MODE) {
+      console.warn("⚠️  CONNECTOR_DEMO_MODE is enabled in production. Real connector credentials should be configured.");
+    }
+    if (config.ALLOW_STUB_TRANSCRIPTION) {
+      console.warn("⚠️  ALLOW_STUB_TRANSCRIPTION is enabled in production. Real Whisper credentials should be configured.");
+    }
   }
 }
 

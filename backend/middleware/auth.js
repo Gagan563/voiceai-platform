@@ -113,7 +113,7 @@ function getRequestToken(req) {
 
 function authMiddleware(req, res, next) {
   // Public routes that don't need auth
-  const publicPaths = ["/health", "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/session", "/api/auth/refresh"];
+  const publicPaths = ["/health", "/metrics", "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/session", "/api/auth/refresh"];
   if (publicPaths.some((p) => req.path.startsWith(p))) {
     return next();
   }

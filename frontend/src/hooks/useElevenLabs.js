@@ -11,7 +11,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
  *   isLoading    — true while waiting for the API response
  *   error        — error message or null
  */
-export default function useElevenLabs() {
+export default function useElevenLabs({ rate = 1.0 } = {}) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -105,7 +105,11 @@ export default function useElevenLabs() {
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
         const source = audioContext.createBufferSource();
+        const safeRate = Number.isFinite(Number(rate))
+          ? Math.min(Math.max(Number(rate), 0.5), 2.0)
+          : 1.0;
         source.buffer = audioBuffer;
+        source.playbackRate.value = safeRate;
         source.connect(audioContext.destination);
 
         source.onended = () => {
@@ -124,7 +128,7 @@ export default function useElevenLabs() {
         setIsSpeaking(false);
       }
     },
-    [stop]
+    [rate, stop]
   );
 
   return {

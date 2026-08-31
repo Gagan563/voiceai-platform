@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ── User ──
@@ -20,6 +19,7 @@ model User {
 
   memories          Memory[]
   sessions          Session[]
+  routines          Routine[]
   tasks             Task[]
   moodLogs          MoodLog[]
   financeRecords    FinanceRecord[]
@@ -79,17 +79,22 @@ model Message {
 
 // ── Routine (scheduled automations) ──
 model Routine {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
+  userId      String?   @map("user_id")
   name        String
+  prompt      String?
   description String?
   trigger     String
   actions     Json
-  enabled     Boolean  @default(true)
+  enabled     Boolean   @default(true)
   lastRun     DateTime? @map("last_run")
-  runCount    Int      @default(0) @map("run_count")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  runCount    Int       @default(0) @map("run_count")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@map("routines")
 }
 

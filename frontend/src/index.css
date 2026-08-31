@@ -130,6 +130,20 @@
     --vox-approve: #059669;
     --vox-cancel: #dc2626;
   }
+
+  html.high-contrast {
+    --vox-bg: #000000;
+    --vox-sidebar: #000000;
+    --vox-surface-1: #050505;
+    --vox-surface-2: #111111;
+    --vox-primary: #00ffff;
+    --vox-primary-glow: rgba(0, 255, 255, 0.32);
+    --vox-text: #ffffff;
+    --vox-text-muted: #d4d4d4;
+    --vox-border: rgba(255, 255, 255, 0.42);
+    --vox-approve: #00ff99;
+    --vox-cancel: #ff5c7a;
+  }
 }
 
 @layer base {
@@ -184,6 +198,25 @@
 
   html.fs-large {
     font-size: 18px;
+  }
+
+  html.access-large-text {
+    font-size: 18px;
+  }
+
+  html.access-large-text body {
+    line-height: 1.65;
+  }
+
+  html.access-large-text button,
+  html.access-large-text input,
+  html.access-large-text select,
+  html.access-large-text textarea {
+    min-height: 48px;
+  }
+
+  html.high-contrast * {
+    border-color: var(--vox-border);
   }
 
   ::selection {

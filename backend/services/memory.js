@@ -104,12 +104,32 @@ function toVectorLiteral(embedding) {
 }
 
 function keywordScore(queryText, content) {
-  const words = queryText
-    .toLowerCase()
+  if (!queryText || !content) return 0;
+  const qLower = queryText.toLowerCase().trim();
+  const cLower = content.toLowerCase().trim();
+
+  let score = 0;
+
+  // Exact full match or containment
+  if (cLower === qLower) score += 10;
+  else if (cLower.includes(qLower)) score += 5;
+
+  const words = qLower
     .split(/\W+/)
     .filter((word) => word.length > 2);
-  const lower = content.toLowerCase();
-  return words.reduce((score, word) => score + (lower.includes(word) ? 1 : 0), 0);
+
+  if (words.length === 0) return score;
+
+  for (const word of words) {
+    if (cLower.includes(word)) {
+      score += 1.5;
+      // Bonus for whole word boundary match
+      const regex = new RegExp(`\\b${word}\\b`, "i");
+      if (regex.test(cLower)) score += 1;
+    }
+  }
+
+  return score;
 }
 
 async function saveMemoryLocal(userId, text) {
