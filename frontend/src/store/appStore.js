@@ -556,7 +556,7 @@ export const useAppStore = create(
           return;
         }
 
-        let token = null;
+        let token;
         try {
           const response = await fetch(
             `${getAuthBaseUrl()}/auth/login`,

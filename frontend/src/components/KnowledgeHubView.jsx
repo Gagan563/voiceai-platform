@@ -1,14 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   BookOpen,
   Upload,
   Search,
   Trash2,
   FileText,
-  Sparkles,
-  Layers,
-  CheckCircle2,
-  AlertCircle,
   FilePlus,
 } from "lucide-react";
 import { BACKEND_URL } from "../config";
@@ -26,8 +22,7 @@ export default function KnowledgeHubView() {
   const [docContent, setDocContent] = useState("");
   const [docTags, setDocTags] = useState("manual, docs");
 
-  const fetchDocuments = async () => {
-    setLoading(true);
+  const loadDocuments = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/knowledge/documents`);
       const data = await res.json();
@@ -37,11 +32,26 @@ export default function KnowledgeHubView() {
     } catch (err) {
       console.warn("Failed to fetch knowledge docs:", err);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    fetchDocuments();
+    let mounted = true;
+    fetch(`${BACKEND_URL}/knowledge/documents`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (mounted && data.documents) {
+          setDocuments(data.documents);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch knowledge docs:", err);
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleIndexManual = async (e) => {
@@ -65,7 +75,7 @@ export default function KnowledgeHubView() {
         setShowAddModal(false);
         setDocTitle("");
         setDocContent("");
-        fetchDocuments();
+        loadDocuments();
       }
     } catch (err) {
       alert("Failed to index document: " + err.message);
@@ -86,7 +96,7 @@ export default function KnowledgeHubView() {
         body: formData,
       });
       if (res.ok) {
-        fetchDocuments();
+        loadDocuments();
       }
     } catch (err) {
       alert("Upload failed: " + err.message);
@@ -96,7 +106,7 @@ export default function KnowledgeHubView() {
   const handleDelete = async (id) => {
     try {
       await fetch(`${BACKEND_URL}/knowledge/documents/${id}`, { method: "DELETE" });
-      fetchDocuments();
+      loadDocuments();
     } catch (err) {
       console.warn("Failed to delete doc:", err);
     }

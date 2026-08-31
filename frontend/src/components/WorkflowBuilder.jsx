@@ -1,15 +1,13 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Play,
   Plus,
   Trash2,
-  Settings2,
   Sparkles,
   Search,
   Code2,
   FileCheck2,
   Share2,
-  ArrowRight,
   CheckCircle2,
   Clock,
   AlertCircle,

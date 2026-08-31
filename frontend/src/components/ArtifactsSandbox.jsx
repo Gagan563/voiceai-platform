@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Code,
   Eye,
-  Terminal,
   Download,
   Copy,
   Check,
@@ -11,7 +10,6 @@ import {
   Monitor,
   RefreshCw,
   Sparkles,
-  Layers,
 } from "lucide-react";
 
 /**
@@ -36,9 +34,8 @@ export default function ArtifactsSandbox({
 </body>
 </html>`,
   title = "Generated Artifact",
-  language = "html",
 }) {
-  const [activeTab, setActiveTab] = useState("preview"); // preview | code | console
+  const [activeTab, setActiveTab] = useState("preview"); // preview | code
   const [viewport, setViewport] = useState("desktop"); // desktop | tablet | mobile
   const [copied, setCopied] = useState(false);
   const [editableCode, setEditableCode] = useState(code);

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Sparkles, X, ArrowRight, CornerDownLeft, Radio } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Mic, Sparkles, X, CornerDownLeft, Radio } from "lucide-react";
 import { BACKEND_URL } from "../config";
 import { sendLocalNotification } from "../lib/notifications";
 
@@ -7,7 +7,7 @@ import { sendLocalNotification } from "../lib/notifications";
  * FloatingVoiceBar — Raycast / Siri-style minimalist floating assistant overlay.
  * Global hotkey `Ctrl+K` or `Alt+Space` opens instant voice/text prompt bar anywhere in the app.
  */
-export default function FloatingVoiceBar({ onAction }) {
+export default function FloatingVoiceBar() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -16,68 +16,6 @@ export default function FloatingVoiceBar({ onAction }) {
 
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
-
-  // Global hotkey listener (Ctrl+K or Alt+Space)
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.ctrlKey && e.key === "k") || (e.altKey && e.code === "Space")) {
-        e.preventDefault();
-        setIsOpen((prev) => !prev);
-      }
-      if (e.key === "Escape" && isOpen) {
-        setIsOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      setResponse(null);
-    } else {
-      stopSpeech();
-    }
-  }, [isOpen]);
-
-  const toggleSpeech = () => {
-    if (isRecording) {
-      stopSpeech();
-      return;
-    }
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported in this browser.");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onstart = () => setIsRecording(true);
-    recognition.onresult = (event) => {
-      const text = Array.from(event.results)
-        .map((r) => r[0].transcript)
-        .join("");
-      setQuery(text);
-    };
-    recognition.onend = () => {
-      setIsRecording(false);
-      if (query.trim()) {
-        handleSubmit();
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
 
   const stopSpeech = () => {
     if (recognitionRef.current) {
@@ -116,6 +54,70 @@ export default function FloatingVoiceBar({ onAction }) {
 
     setIsLoading(false);
   };
+
+  const toggleSpeech = () => {
+    if (isRecording) {
+      stopSpeech();
+      return;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Speech recognition not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onresult = (event) => {
+      const text = Array.from(event.results)
+        .map((r) => r[0].transcript)
+        .join("");
+      setQuery(text);
+    };
+    recognition.onend = () => {
+      setIsRecording(false);
+      if (query.trim()) {
+        handleSubmit();
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  // Global hotkey listener (Ctrl+K or Alt+Space)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey && e.key === "k") || (e.altKey && e.code === "Space")) {
+        e.preventDefault();
+        setIsOpen((prev) => !prev);
+      }
+      if (e.key === "Escape" && isOpen) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
+
+  useEffect(() => {
+    let timer;
+    if (isOpen) {
+      timer = setTimeout(() => inputRef.current?.focus(), 50);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      stopSpeech();
+    };
+  }, [isOpen]);
 
   return (
     <>

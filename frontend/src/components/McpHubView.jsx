@@ -1,23 +1,17 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Layers,
   Plus,
   Trash2,
   Play,
   CheckCircle2,
-  XCircle,
   AlertCircle,
-  ExternalLink,
-  ShieldCheck,
-  Terminal,
   Server,
-  Zap,
 } from "lucide-react";
 import { BACKEND_URL } from "../config";
 
 export default function McpHubView() {
   const [connectors, setConnectors] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [testingId, setTestingId] = useState(null);
@@ -31,8 +25,7 @@ export default function McpHubView() {
     actions: "query, execute, fetch",
   });
 
-  const fetchConnectors = async () => {
-    setLoading(true);
+  const loadConnectors = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/mcp/connectors`);
       const data = await res.json();
@@ -42,11 +35,22 @@ export default function McpHubView() {
     } catch (err) {
       console.warn("Failed to fetch connectors:", err);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    fetchConnectors();
+    let mounted = true;
+    fetch(`${BACKEND_URL}/mcp/connectors`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (mounted && data.connectors) {
+          setConnectors(data.connectors);
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch connectors:", err));
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleRegister = async (e) => {
@@ -74,7 +78,7 @@ export default function McpHubView() {
       if (res.ok) {
         setShowAddModal(false);
         setNewConnector({ id: "", name: "", description: "", endpoint: "", actions: "query, execute" });
-        fetchConnectors();
+        loadConnectors();
       }
     } catch (err) {
       alert("Failed to register connector: " + err.message);
@@ -84,7 +88,7 @@ export default function McpHubView() {
   const handleDelete = async (id) => {
     try {
       await fetch(`${BACKEND_URL}/mcp/connectors/${id}`, { method: "DELETE" });
-      fetchConnectors();
+      loadConnectors();
     } catch (err) {
       console.warn("Delete connector error:", err);
     }
