@@ -7,6 +7,7 @@
 const express = require("express");
 const { INTENT_EXTRACTION_PROMPT, PLAN_GENERATION_PROMPT } = require("../prompts");
 const { recallMemory, extractFacts, saveMemory } = require("../services/memory");
+const { searchKnowledge } = require("../services/knowledge");
 const ai = require("../services/ai");
 const { runAgent } = require("../services/agent");
 const { executeTool } = require("../services/tools");
@@ -520,10 +521,14 @@ router.post("/chat/direct", async (req, res) => {
     try {
       const memories = await recallMemory(userId, text, 3);
       if (memories.length > 0) {
-        memoriesContext = `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+        memoriesContext += `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+      }
+      const knowledgeChunks = searchKnowledge(text, { topK: 2, minScore: 0.15 });
+      if (knowledgeChunks.length > 0) {
+        memoriesContext += `\n\nRelevant knowledge base excerpts:\n${knowledgeChunks.map((k, i) => `[Doc: ${k.docTitle}] ${k.text}`).join("\n---\n")}`;
       }
     } catch (err) {
-      console.warn("[Chat] Memory recall skipped:", errorMessage(err));
+      console.warn("[Chat] Memory/Knowledge recall skipped:", errorMessage(err));
     }
 
     const systemPrompt = `You are NOVA, a warm, direct, and practical voice-first AI assistant. Answer the user's question naturally and concisely. If it's a calculation, show the result. If it's a factual question, give the answer. Sound like a helpful person, not a robot. Do not describe steps or plans — just answer.${memoriesContext}`;
@@ -563,7 +568,11 @@ router.post("/chat/stream", async (req, res) => {
     try {
       const memories = await recallMemory(userId, text, 3);
       if (memories.length > 0) {
-        memoriesContext = `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+        memoriesContext += `\n\nRelevant context from previous conversations:\n${memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
+      }
+      const knowledgeChunks = searchKnowledge(text, { topK: 2, minScore: 0.15 });
+      if (knowledgeChunks.length > 0) {
+        memoriesContext += `\n\nRelevant knowledge base excerpts:\n${knowledgeChunks.map((k, i) => `[Doc: ${k.docTitle}] ${k.text}`).join("\n---\n")}`;
       }
     } catch {
       // Memory recall is optional for streaming

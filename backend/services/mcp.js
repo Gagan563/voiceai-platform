@@ -651,30 +651,108 @@ function demoConnectorResult(connectorId, action, params = {}) {
   return base;
 }
 
+const customConnectors = {};
+
+function registerCustomConnector({ id, name, description, actions, endpoint, headers = {} }) {
+  if (!id || !name) {
+    throw new Error("Connector ID and Name are required.");
+  }
+  const cleanId = String(id).toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  const actionList = Array.isArray(actions) && actions.length > 0 ? actions : ["query", "execute"];
+
+  customConnectors[cleanId] = {
+    id: cleanId,
+    name,
+    description: description || `Custom MCP connector: ${name}`,
+    actions: actionList,
+    endpoint: endpoint || null,
+    headers,
+    custom: true,
+    configured: () => true,
+    handler: async (action, params) => {
+      if (endpoint) {
+        try {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...headers,
+            },
+            body: JSON.stringify({ action, params, connectorId: cleanId }),
+          });
+          const data = await res.json();
+          return { success: true, ...data };
+        } catch (err) {
+          return { success: false, error: `Custom MCP endpoint error: ${err.message}` };
+        }
+      }
+      return {
+        success: true,
+        message: `Custom MCP '${name}' executed action '${action}'`,
+        params,
+        timestamp: new Date().toISOString(),
+      };
+    },
+  };
+
+  return {
+    id: cleanId,
+    name,
+    description: customConnectors[cleanId].description,
+    actions: actionList,
+    custom: true,
+  };
+}
+
+function deleteCustomConnector(id) {
+  if (customConnectors[id]) {
+    delete customConnectors[id];
+    return { success: true, id };
+  }
+  return { success: false, error: `Connector '${id}' not found.` };
+}
+
 function listConnectors() {
-  return Object.entries(connectors).map(([id, c]) => ({
+  const builtin = Object.entries(connectors).map(([id, c]) => ({
     id,
     name: c.name,
     configured: c.configured(),
     demo_available: !c.configured() && demoModeEnabled(),
     actions: c.actions,
+    custom: false,
   }));
+
+  const custom = Object.entries(customConnectors).map(([id, c]) => ({
+    id,
+    name: c.name,
+    description: c.description,
+    configured: true,
+    demo_available: false,
+    actions: c.actions,
+    endpoint: c.endpoint,
+    custom: true,
+  }));
+
+  return [...builtin, ...custom];
 }
 
 function connectorStatus(id) {
-  const c = connectors[id];
+  const c = connectors[id] || customConnectors[id];
   if (!c) return null;
   return {
     id,
     name: c.name,
+    description: c.description || undefined,
     configured: c.configured(),
     demo_available: !c.configured() && demoModeEnabled(),
     actions: c.actions,
+    endpoint: c.endpoint || undefined,
+    custom: Boolean(c.custom),
   };
 }
 
 async function callConnector({ connectorId, action, params = {} }) {
-  const connector = connectors[connectorId];
+  const connector = connectors[connectorId] || customConnectors[connectorId];
   if (!connector) {
     return { success: false, status: "unknown_connector", error: `Unknown connector: ${connectorId}` };
   }
@@ -698,4 +776,10 @@ async function callConnector({ connectorId, action, params = {} }) {
   }
 }
 
-module.exports = { listConnectors, connectorStatus, callConnector };
+module.exports = {
+  listConnectors,
+  connectorStatus,
+  callConnector,
+  registerCustomConnector,
+  deleteCustomConnector,
+};

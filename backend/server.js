@@ -244,11 +244,15 @@ app.get("/status", (req, res) => {
   });
 });
 
+const knowledgeRouter = require("./routes/knowledge");
+
 // ── Route modules ──
 app.use("/transcribe", aiLimiter, transcribeRouter);
 app.use("/tts", aiLimiter, ttsRouter);
 app.use("/memories", generalLimiter, memoriesRouter);
 app.use("/mcp", generalLimiter, mcpRouter);
+app.use("/knowledge", generalLimiter, knowledgeRouter);
+app.use("/api/knowledge", generalLimiter, knowledgeRouter);
 app.use("/modules", generalLimiter, modulesRouter);
 app.use("/nova", aiLimiter, novaModulesRouter);
 app.use("/api/auth", authLimiter, authRouter);

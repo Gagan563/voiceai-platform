@@ -30,10 +30,14 @@ const navSections = [
     ],
   },
   {
-    title: "Build",
+    title: "Build & AI Hub",
     collapsible: true,
     items: [
       { id: "build", label: "Build workspace", icon: Code2 },
+      { id: "artifacts", label: "Live Artifacts", icon: Zap },
+      { id: "workflows", label: "Agent Workflows", icon: Bot },
+      { id: "knowledge", label: "Knowledge Hub", icon: BookOpen },
+      { id: "mcp", label: "MCP Connectors", icon: Search },
       { id: "apps", label: "My Projects", icon: Code2 },
       { id: "gallery", label: "Templates", icon: BookOpen },
     ],

@@ -21,6 +21,12 @@ import TemplatesView from "@/components/TemplatesView";
 import AgentProgressPanel from "@/components/AgentProgressPanel";
 import BackgroundAgentsPanel from "@/components/BackgroundAgentsPanel";
 import RemindersPanel from "@/components/RemindersPanel";
+import ArtifactsSandbox from "@/components/ArtifactsSandbox";
+import WorkflowBuilder from "@/components/WorkflowBuilder";
+import KnowledgeHubView from "@/components/KnowledgeHubView";
+import McpHubView from "@/components/McpHubView";
+import ContinuousVoiceMode from "@/components/ContinuousVoiceMode";
+import FloatingVoiceBar from "@/components/FloatingVoiceBar";
 import { healthCheck } from "@/api/client";
 import useAppStore from "@/store/appStore";
 import useSocket from "@/hooks/useSocket";
@@ -39,6 +45,8 @@ export default function App() {
   const [agentProgressOpen, setAgentProgressOpen] = useState(false);
   const [bgAgentsOpen, setBgAgentsOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+
+  const [continuousVoiceOpen, setContinuousVoiceOpen] = useState(false);
 
   // Store
   const messages = useAppStore((s) => s.messages);
@@ -144,6 +152,20 @@ export default function App() {
             onSelectModule={setActiveView}
             onClose={() => setActiveView("playground")}
           />
+        ) : activeView === "artifacts" ? (
+          /* ── Live Artifacts Sandbox ── */
+          <div className="flex-1 p-4 lg:p-6 overflow-hidden">
+            <ArtifactsSandbox />
+          </div>
+        ) : activeView === "workflows" ? (
+          /* ── Multi-Agent Workflows ── */
+          <WorkflowBuilder />
+        ) : activeView === "knowledge" ? (
+          /* ── Knowledge Hub & Vector RAG ── */
+          <KnowledgeHubView />
+        ) : activeView === "mcp" ? (
+          /* ── MCP Connectors Hub ── */
+          <McpHubView />
         ) : activeView === "dashboard" ? (
           /* ── Dashboard ── */
           <DashboardView />
@@ -157,7 +179,15 @@ export default function App() {
           /* ── Idle / Hero mode ── */
           <>
             {/* Top bar */}
-            <header className="flex h-[52px] shrink-0 items-center justify-end border-b border-[rgba(255,255,255,0.06)] px-4 lg:px-6">
+            <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-[rgba(255,255,255,0.06)] px-4 lg:px-6">
+              <button
+                onClick={() => setContinuousVoiceOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 text-indigo-400 text-xs font-semibold transition group"
+              >
+                <span className="w-2 h-2 rounded-full bg-indigo-500 group-hover:animate-ping" />
+                <span>Live Continuous Voice</span>
+              </button>
+
               <div className="flex items-center gap-2">
                 <VoiceActivation />
                 <button
@@ -179,6 +209,16 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* Global Floating Quick Voice Assistant Bar */}
+      <FloatingVoiceBar />
+
+      {/* Continuous Live Voice Modal */}
+      <ContinuousVoiceMode
+        isOpen={continuousVoiceOpen}
+        onClose={() => setContinuousVoiceOpen(false)}
+        onSendMessage={handlePrompt}
+      />
 
       {/* Slide-over panels */}
       <MemoryView isOpen={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />

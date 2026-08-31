@@ -1,5 +1,11 @@
 const express = require("express");
-const { callConnector, connectorStatus, listConnectors } = require("../services/mcp");
+const {
+  callConnector,
+  connectorStatus,
+  listConnectors,
+  registerCustomConnector,
+  deleteCustomConnector,
+} = require("../services/mcp");
 
 const router = express.Router();
 
@@ -11,6 +17,24 @@ router.get("/connectors/:id", (req, res) => {
   const status = connectorStatus(req.params.id);
   if (!status) return res.status(404).json({ error: "Connector not found" });
   res.json({ success: true, connector: status });
+});
+
+router.post("/connectors", (req, res) => {
+  try {
+    const { id, name, description, actions, endpoint, headers } = req.body || {};
+    const created = registerCustomConnector({ id, name, description, actions, endpoint, headers });
+    res.status(201).json({ success: true, connector: created });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete("/connectors/:id", (req, res) => {
+  const result = deleteCustomConnector(req.params.id);
+  if (!result.success) {
+    return res.status(404).json(result);
+  }
+  res.json(result);
 });
 
 router.post("/call", async (req, res) => {
@@ -26,3 +50,4 @@ router.post("/call", async (req, res) => {
 });
 
 module.exports = router;
+
