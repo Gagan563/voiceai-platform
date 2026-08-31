@@ -645,15 +645,30 @@ const io = initializeSocket(server);
 app.set("io", io);
 
 // ── Serve frontend in production ──
-const publicDir = path.join(__dirname, "public");
-if (fs.existsSync(publicDir)) {
+const candidatePublicDirs = [
+  path.join(__dirname, "public"),
+  path.join(__dirname, "..", "public"),
+  path.join(__dirname, "..", "dist"),
+  path.join(__dirname, "..", "frontend", "dist"),
+];
+const publicDir = candidatePublicDirs.find((dir) => fs.existsSync(dir) && fs.existsSync(path.join(dir, "index.html")));
+
+if (publicDir) {
   app.use(express.static(publicDir));
-  // SPA fallback — serve index.html for any non-API route
-  app.get("*", (req, res) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/health")) return;
+  // SPA fallback — serve index.html for any non-API / non-health route
+  app.get("*", (req, res, next) => {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/health") ||
+      req.path.startsWith("/metrics") ||
+      req.path.startsWith("/status") ||
+      req.path.startsWith("/socket.io")
+    ) {
+      return next();
+    }
     res.sendFile(path.join(publicDir, "index.html"));
   });
-  console.log("[Server] Serving static frontend from /public");
+  console.log(`[Server] Serving static frontend from ${publicDir}`);
 }
 
 // ── 404 / Error ──

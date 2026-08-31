@@ -56,10 +56,9 @@ const CORS_ORIGINS = envList("CORS_ORIGIN", [
 
 const SOCKET_PATH = process.env.SOCKET_PATH || "/socket.io";
 
-// ── JWT ──
-
+const crypto = require("crypto");
 const JWT_SECRET_PLACEHOLDER = "change-this-to-a-random-64-char-string-in-production";
-const JWT_SECRET = process.env.JWT_SECRET || null;
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? crypto.randomBytes(32).toString("hex") : "dev-jwt-secret-key-development-mode-only-32-chars-long");
 const JWT_EXPIRY_SECONDS = envInt("JWT_EXPIRY_SECONDS", 86400);
 
 // ── User ──
