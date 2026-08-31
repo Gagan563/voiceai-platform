@@ -33,10 +33,105 @@ const messageVariants = {
   exit: { opacity: 0, scale: 0.96, transition: { duration: 0.15 } },
 };
 
+function CodeBlock({ language, code }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.warn("Failed to copy code:", err);
+    }
+  };
+
+  return (
+    <div className="my-2.5 overflow-hidden rounded-xl border border-line/70 bg-[#070a12] shadow-md">
+      <div className="flex items-center justify-between border-b border-line/50 bg-[#0d1220] px-3.5 py-1.5 text-xs text-text-muted">
+        <span className="font-code text-[11px] font-bold uppercase tracking-wider text-aqua">
+          {language || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={copyCode}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium text-text-muted transition-all hover:bg-white/[0.08] hover:text-text"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 text-leaf" />
+              <span className="text-leaf font-semibold">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              <span>Copy code</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3.5 font-code text-xs leading-relaxed text-[#e2e8f0]">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function FormattedMessageContent({ text, isUser }) {
+  if (!text) return null;
+
+  if (isUser) {
+    return <p className="whitespace-pre-line text-sm leading-relaxed">{text}</p>;
+  }
+
+  // Parse code blocks
+  const parts = [];
+  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({
+        type: "text",
+        content: text.slice(lastIndex, match.index),
+      });
+    }
+    parts.push({
+      type: "code",
+      language: match[1] || "code",
+      content: match[2].trimEnd(),
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({
+      type: "text",
+      content: text.slice(lastIndex),
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {parts.map((part, i) => {
+        if (part.type === "code") {
+          return <CodeBlock key={i} language={part.language} code={part.content} />;
+        }
+        return (
+          <p key={i} className="whitespace-pre-line text-sm leading-relaxed">
+            {part.content}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function TypingIndicator({ stage }) {
   const stageText = {
-    intent: "Reading intent",
-    plan: "Building plan",
+    intent: "Thinking",
+    plan: "Crafting response",
     execute: "Executing",
   };
 
@@ -175,7 +270,6 @@ function MessageItem({
   useEffect(() => {
     if (isEditing && textareaRef.current) {
       textareaRef.current.focus();
-      // Auto-resize
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
@@ -234,7 +328,7 @@ function MessageItem({
     >
       <MessageIcon role={msg.role} type={msg.type} />
 
-      <div className="flex max-w-[min(85%,720px)] flex-col gap-1.5">
+      <div className="flex max-w-[min(88%,740px)] flex-col gap-1.5">
         {/* Main Message Bubble */}
         <div
           className={`relative px-4 py-3 transition-all duration-200 ${
@@ -280,11 +374,12 @@ function MessageItem({
               </div>
             </div>
           ) : (
-            /* Regular Message Content */
+            /* Regular Message Content with Code Highlighting */
             <>
-              <p className="whitespace-pre-line text-sm leading-relaxed">
-                {msg.content || msg.text}
-              </p>
+              <FormattedMessageContent
+                text={msg.content || msg.text}
+                isUser={isUser}
+              />
 
               {msg.type === "execution_confirmation" && msg.execution?.review ? (
                 <ExecutionReview
@@ -306,11 +401,7 @@ function MessageItem({
             }`}
           >
             {/* Timestamp */}
-            <span
-              className={`mr-1.5 font-code text-[10px] ${
-                isUser ? "text-text-muted" : "text-text-muted"
-              }`}
-            >
+            <span className="mr-1.5 font-code text-[10px] text-text-muted">
               {new Date(msg.timestamp).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",

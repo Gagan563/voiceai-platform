@@ -102,8 +102,8 @@ const codingApprovalPattern =
 const isExplicitBuildRequest = (text = "") => {
   const value = String(text || "").toLowerCase();
   return (
-    /\b(build|create|make|generate|develop)\b/.test(value) &&
-    /\b(app|application|website|web app|dashboard|preview|prototype|page|site|game)\b/.test(value)
+    /\b(build|create|make|generate|develop|code|program|design)\b/.test(value) &&
+    /\b(app|application|website|web app|dashboard|preview|prototype|page|site|game|calculator|tool|widget|ui|component|landing page)\b/.test(value)
   );
 };
 
@@ -718,9 +718,11 @@ export const useAppStore = create(
           return;
         }
 
-        // Playground is a direct assistant conversation. Planning and approvals
-        // are reserved for the explicit Build workspace.
-        if (!buildMode) {
+        const isBuild = buildMode || isExplicitBuildRequest(clean);
+
+        // Direct assistant conversation for general queries and direct answers.
+        // If the query asks to build/create an app or artifact, it routes directly to the builder.
+        if (!isBuild) {
           set({ isLoading: true, loadingStage: "intent" });
           try {
             const chatResponse = await directChat(clean);
