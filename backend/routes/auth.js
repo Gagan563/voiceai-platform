@@ -42,36 +42,39 @@ function getPrisma() {
 // ── Cookie helpers ──
 
 function setAuthCookie(res, token) {
+  const prod = config.isProduction();
   res.cookie("nova_auth", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: config.isProduction(),
+    sameSite: prod ? "none" : "lax",
+    secure: prod,
     path: "/",
     maxAge: config.JWT_EXPIRY_SECONDS * 1000,
   });
 }
 
 function setRefreshCookie(res, token) {
+  const prod = config.isProduction();
   res.cookie("nova_refresh", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: config.isProduction(),
+    sameSite: prod ? "none" : "lax",
+    secure: prod,
     path: "/api/auth", // Only sent to auth endpoints
     maxAge: REFRESH_TOKEN_EXPIRY * 1000,
   });
 }
 
 function clearAuthCookie(res) {
+  const prod = config.isProduction();
   res.clearCookie("nova_auth", {
     httpOnly: true,
-    sameSite: "lax",
-    secure: config.isProduction(),
+    sameSite: prod ? "none" : "lax",
+    secure: prod,
     path: "/",
   });
   res.clearCookie("nova_refresh", {
     httpOnly: true,
-    sameSite: "lax",
-    secure: config.isProduction(),
+    sameSite: prod ? "none" : "lax",
+    secure: prod,
     path: "/api/auth",
   });
 }
@@ -315,6 +318,58 @@ router.get("/me", (req, res) => {
 router.delete("/session", (req, res) => {
   clearAuthCookie(res);
   res.json({ cleared: true });
+});
+
+/**
+ * POST /api/auth/change-password — update user password
+ * Body: { currentPassword, newPassword }
+ */
+router.post("/change-password", async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Current and new passwords are required" });
+  }
+
+  const strengthError = validatePasswordStrength(newPassword);
+  if (strengthError) {
+    return res.status(400).json({ error: strengthError });
+  }
+
+  if (!config.isProduction()) {
+    return res.json({ success: true, message: "Password updated (dev mode)" });
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    return res.status(503).json({ error: "Database not available" });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user || !user.password) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { password: hashedPassword },
+    });
+
+    res.json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    console.error("[Auth] Change password error:", error.message);
+    res.status(500).json({ error: "Failed to update password" });
+  }
 });
 
 module.exports = router;

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: nova-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: VOICEAI_MEMORY_MODE
+        value: local
+      - key: AI_ROUTER_MODE
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: ALLOW_STUB_TRANSCRIPTION
+        value: "true"
+      - key: CONNECTOR_DEMO_MODE
+        value: "true"
+      - key: LOCAL_COMPUTER_ACCESS
+        value: "false"
+      - key: LOCAL_COMPUTER_WRITE
+        value: "false"
+      - key: CORS_ORIGIN
+        sync: false

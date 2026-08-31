@@ -17,9 +17,11 @@ export const STORE_KEY = "voxmind-store";
 
 // ── AI Models ──
 
-export const DEFAULT_MODEL = "gemini-2.5-flash";
+export const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
 export const MODEL_OPTIONS = [
+  { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", provider: "groq" },
+  { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Fast)", provider: "groq" },
   { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", provider: "gemini" },
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "gemini" },
   { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" },
