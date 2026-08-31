@@ -26,8 +26,8 @@ function NovaOrb() {
         </filter>
       </defs>
       <circle cx="28" cy="28" r="22" fill="url(#orb-glow)" filter="url(#orb-blur)" />
-      <circle cx="28" cy="28" r="14" fill="#22d3ee" fillOpacity="0.12" />
-      <circle cx="28" cy="28" r="6" fill="#22d3ee" fillOpacity="0.6" />
+      <circle cx="28" cy="28" r="14" fill="#f5a524" fillOpacity="0.12" />
+      <circle cx="28" cy="28" r="6" fill="#f5a524" fillOpacity="0.6" />
     </svg>
   );
 }
@@ -95,11 +95,12 @@ export default function HeroPrompt({ onSubmit }) {
           className="mb-10 flex flex-col items-center text-center"
         >
           <NovaOrb />
-          <h1 className="mt-4 font-heading text-[28px] font-bold leading-tight tracking-tight text-text sm:text-[36px]">
-            What do you want to build?
+          <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.32em] text-aqua">NOVA / signal studio</p>
+          <h1 className="mt-2 font-heading text-[34px] font-bold leading-[0.98] tracking-tight text-text sm:text-[48px]">
+            Start with a spark. Leave with a system.
           </h1>
           <p className="mt-2 text-sm text-text-muted">
-            Describe your idea — NOVA will plan, build, and preview it for you.
+            Speak, sketch, or write the brief. NOVA turns the signal into a working plan.
           </p>
         </motion.div>
 
@@ -109,14 +110,14 @@ export default function HeroPrompt({ onSubmit }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
         >
-          <div className="nova-card rounded-2xl px-4 pb-3 pt-4 glow-pulse">
+          <div className="nova-card rounded-[6px_28px_6px_28px] px-5 pb-4 pt-5 glow-pulse">
             {/* Text area */}
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={onKeyDown}
               disabled={disabled}
-              placeholder="e.g. Build me a task manager with drag-and-drop..."
+              placeholder="Describe the thing you keep wishing existed..."
               rows={3}
               className="w-full resize-none bg-transparent text-base text-text outline-none placeholder:text-text-muted disabled:opacity-50"
               data-testid="hero-text-input"
@@ -174,17 +175,21 @@ export default function HeroPrompt({ onSubmit }) {
                   "inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-sm font-semibold transition-all duration-200",
                   disabled || !text.trim()
                     ? "cursor-not-allowed bg-vox-s2 text-text-muted"
-                    : "bg-aqua text-[#06080f] shadow-lg shadow-aqua/20 hover:shadow-aqua/40 hover:brightness-110",
+                    : "bg-aqua text-[#21120a] shadow-lg shadow-amber-950/30 hover:shadow-amber-500/30 hover:brightness-110",
                 ].join(" ")}
                 data-testid="send-button"
               >
-                Build
+                Make it real
               </button>
             </div>
           </div>
 
           {/* Aurora glow line */}
           <div className="hero-gradient-line mt-0" />
+          <div className="mt-4 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+            <span>Voice / text / context</span>
+            <span>Press Enter to send</span>
+          </div>
         </motion.div>
       </div>
     </div>

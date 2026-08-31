@@ -612,8 +612,9 @@ export const useAppStore = create(
         }));
       },
 
-      submitInput: async (text) => {
+      submitInput: async (text, options = {}) => {
         const clean = (text || "").trim();
+        const buildMode = options.build === true;
         if (!clean || get().isLoading) return;
         const pendingClarification = get().pendingClarification;
         const existingPlan = get().currentPlan;
@@ -629,7 +630,7 @@ export const useAppStore = create(
           timestamp: Date.now(),
         });
 
-        if (!pendingClarification && isApprovalReply(clean) && existingPlan?.length) {
+        if (buildMode && !pendingClarification && isApprovalReply(clean) && existingPlan?.length) {
           set((state) => ({
             messages: [...state.messages, userMsg],
             error: null,
@@ -638,7 +639,7 @@ export const useAppStore = create(
           return;
         }
 
-        if (pendingClarification?.type === "blocked_step" && existingPlan?.length) {
+        if (buildMode && pendingClarification?.type === "blocked_step" && existingPlan?.length) {
           const blockedStepId = pendingClarification.stepId;
           const blockedStep = existingPlan.find((step) => step.id === blockedStepId) || firstBlockedStep(existingPlan);
 
@@ -680,7 +681,7 @@ export const useAppStore = create(
           return;
         }
 
-        if (!pendingClarification && isAmbiguousFollowUp(clean) && !existingPlan?.length) {
+        if (buildMode && !pendingClarification && isAmbiguousFollowUp(clean) && !existingPlan?.length) {
           set((state) => ({
             messages: [...state.messages, userMsg],
             error: null,
@@ -717,6 +718,23 @@ export const useAppStore = create(
           return;
         }
 
+        // Playground is a direct assistant conversation. Planning and approvals
+        // are reserved for the explicit Build workspace.
+        if (!buildMode) {
+          set({ isLoading: true, loadingStage: "intent" });
+          try {
+            const chatResponse = await directChat(clean);
+            const answer = chatResponse.answer || chatResponse.spoken_response || "I couldn't generate a response for that yet.";
+            get().addMessage({ role: "assistant", text: answer, content: answer, type: "chat", timestamp: Date.now() });
+            set({ isLoading: false, loadingStage: null, activeModule: "chat" });
+            get()._snapshotSession();
+          } catch (directError) {
+            const message = getErrorMessage(directError, "I couldn't answer that right now. Please try again.");
+            get().addMessage({ role: "system", text: message, content: message, type: "error", timestamp: Date.now() });
+            set({ isLoading: false, loadingStage: null, error: message });
+          }
+          return;
+        }
         set({
           isLoading: true,
           loadingStage: "intent",
@@ -971,7 +989,54 @@ export const useAppStore = create(
         }
       },
 
-      processUserInput: (text) => get().submitInput(text),
+      processUserInput: (text, options) => get().submitInput(text, options),
+
+      editAndResubmitMessage: async (messageId, newText, options = {}) => {
+        const clean = (newText || "").trim();
+        if (!clean || get().isLoading) return;
+        const currentMessages = get().messages;
+        const index = currentMessages.findIndex((m) => m.id === messageId);
+        if (index === -1) return;
+
+        const priorMessages = currentMessages.slice(0, index);
+        set({
+          messages: priorMessages,
+          currentPlan: null,
+          previewArtifact: null,
+          error: null,
+        });
+
+        await get().submitInput(clean, options);
+      },
+
+      regenerateResponse: async (assistantMessageId, options = {}) => {
+        if (get().isLoading) return;
+        const currentMessages = get().messages;
+        const index = currentMessages.findIndex((m) => m.id === assistantMessageId);
+        if (index === -1) return;
+
+        let userMsg = null;
+        let userIndex = -1;
+        for (let i = index - 1; i >= 0; i--) {
+          if (currentMessages[i].role === "user") {
+            userMsg = currentMessages[i];
+            userIndex = i;
+            break;
+          }
+        }
+
+        if (!userMsg) return;
+
+        const priorMessages = currentMessages.slice(0, userIndex);
+        set({
+          messages: priorMessages,
+          currentPlan: null,
+          previewArtifact: null,
+          error: null,
+        });
+
+        await get().submitInput(userMsg.content || userMsg.text, options);
+      },
 
       updatePlanStep: (id, description) =>
         set((state) => ({

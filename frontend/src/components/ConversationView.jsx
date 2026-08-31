@@ -1,12 +1,20 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
   Bot,
+  Check,
   CheckCircle2,
   ClipboardList,
+  Copy,
+  CornerDownLeft,
   Layers3,
+  Pencil,
+  RotateCcw,
   User,
+  Volume2,
+  VolumeX,
+  X,
   XCircle,
 } from "lucide-react";
 import useAppStore from "@/store/appStore";
@@ -15,14 +23,14 @@ import useTTS from "@/hooks/useTTS";
 import useElevenLabs from "@/hooks/useElevenLabs";
 
 const messageVariants = {
-  hidden: { opacity: 0, y: 18, scale: 0.98 },
+  hidden: { opacity: 0, y: 16, scale: 0.98 },
   visible: {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring", stiffness: 320, damping: 26 },
+    transition: { type: "spring", stiffness: 340, damping: 28 },
   },
-  exit: { opacity: 0, scale: 0.98, transition: { duration: 0.15 } },
+  exit: { opacity: 0, scale: 0.96, transition: { duration: 0.15 } },
 };
 
 function TypingIndicator({ stage }) {
@@ -42,7 +50,7 @@ function TypingIndicator({ stage }) {
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-aqua/15 text-aqua ring-1 ring-aqua/25">
         <Bot className="h-4.5 w-4.5" />
       </div>
-      <div className="rounded-2xl rounded-tl-md border border-line bg-panel/80 px-4 py-3">
+      <div className="rounded-2xl rounded-tl-md border border-line bg-panel/80 px-4 py-3 shadow-lg shadow-black/10 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="dot-loader" aria-hidden="true">
             <span />
@@ -100,7 +108,7 @@ function ExecutionReview({ review, batches = [] }) {
 function MessageIcon({ role, type }) {
   if (role === "user") {
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-text text-ink-950 shadow-lg shadow-black/20">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-teal-400 text-ink-950 shadow-md shadow-cyan-500/20 ring-1 ring-white/20">
         <User className="h-4.5 w-4.5" />
       </div>
     );
@@ -139,9 +147,263 @@ function MessageIcon({ role, type }) {
   }
 
   return (
-    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-panel font-heading text-sm font-bold text-brand">
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-aqua/30 bg-gradient-to-br from-panel via-panel-raised to-aqua/10 font-heading text-sm font-bold text-brand shadow-sm shadow-black/20 ring-1 ring-aqua/20">
       N
     </div>
+  );
+}
+
+function MessageItem({
+  msg,
+  isSpeaking,
+  onSpeak,
+  onStopSpeaking,
+  onEditSubmit,
+  onRegenerate,
+  isLoading,
+}) {
+  const isUser = msg.role === "user";
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(msg.content || msg.text || "");
+  const [copied, setCopied] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    setEditText(msg.content || msg.text || "");
+  }, [msg.content, msg.text]);
+
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      // Auto-resize
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [isEditing]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      const textToCopy = msg.content || msg.text || "";
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.warn("Failed to copy text:", err);
+    }
+  }, [msg.content, msg.text]);
+
+  const handleTextareaChange = (e) => {
+    setEditText(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = `${e.target.scrollHeight}px`;
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmitEdit();
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+      setEditText(msg.content || msg.text || "");
+    }
+  };
+
+  const handleSubmitEdit = () => {
+    const clean = editText.trim();
+    if (!clean) return;
+    setIsEditing(false);
+    onEditSubmit(msg.id, clean);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditText(msg.content || msg.text || "");
+  };
+
+  return (
+    <motion.div
+      key={msg.id}
+      variants={messageVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      layout
+      className={`group relative flex items-start gap-3 ${
+        isUser ? "flex-row-reverse" : ""
+      }`}
+    >
+      <MessageIcon role={msg.role} type={msg.type} />
+
+      <div className="flex max-w-[min(85%,720px)] flex-col gap-1.5">
+        {/* Main Message Bubble */}
+        <div
+          className={`relative px-4 py-3 transition-all duration-200 ${
+            isUser
+              ? isEditing
+                ? "w-[min(100%,640px)] rounded-2xl border border-cyan-500/40 bg-panel-raised shadow-xl shadow-cyan-500/10"
+                : "rounded-2xl rounded-tr-sm bg-gradient-to-br from-cyan-500/90 via-cyan-600/90 to-teal-600/90 text-white shadow-lg shadow-cyan-900/20 ring-1 ring-white/15"
+              : msg.type === "error"
+                ? "nova-card rounded-2xl rounded-tl-sm border-danger/30 bg-danger/10 text-danger"
+                : "nova-card rounded-2xl rounded-tl-sm border-line/60 bg-panel/90 text-text shadow-md shadow-black/20 backdrop-blur-md"
+          }`}
+        >
+          {isEditing ? (
+            /* Inline Edit View (Claude style) */
+            <div className="flex flex-col gap-3">
+              <textarea
+                ref={textareaRef}
+                value={editText}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                rows={2}
+                className="w-full resize-none bg-transparent text-sm leading-relaxed text-text outline-none placeholder:text-text-muted"
+                placeholder="Edit your prompt..."
+              />
+              <div className="flex items-center justify-end gap-2 border-t border-line/50 pt-2.5">
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-text-muted transition-colors hover:bg-white/5 hover:text-text"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitEdit}
+                  disabled={!editText.trim() || isLoading}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 px-3 py-1 text-xs font-semibold text-ink-950 shadow-md transition-all hover:opacity-95 disabled:opacity-50"
+                >
+                  <CornerDownLeft className="h-3.5 w-3.5" />
+                  Save & Submit
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Regular Message Content */
+            <>
+              <p className="whitespace-pre-line text-sm leading-relaxed">
+                {msg.content || msg.text}
+              </p>
+
+              {msg.type === "execution_confirmation" && msg.execution?.review ? (
+                <ExecutionReview
+                  review={msg.execution.review}
+                  batches={msg.execution.batches || []}
+                />
+              ) : null}
+            </>
+          )}
+        </div>
+
+        {/* Action Bar (Claude-style bottom action icons) */}
+        {!isEditing && (
+          <div
+            className={`flex items-center gap-1 px-1 transition-opacity duration-200 ${
+              isUser
+                ? "justify-end opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                : "justify-start opacity-75 group-hover:opacity-100"
+            }`}
+          >
+            {/* Timestamp */}
+            <span
+              className={`mr-1.5 font-code text-[10px] ${
+                isUser ? "text-text-muted" : "text-text-muted"
+              }`}
+            >
+              {new Date(msg.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+
+            {/* Copy Button */}
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={copied ? "Copied to clipboard!" : "Copy text"}
+              aria-label="Copy text"
+              className="inline-flex h-6.5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-text-muted transition-all hover:bg-white/[0.08] hover:text-text"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-leaf" />
+                  <span className="text-leaf">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Copy</span>
+                </>
+              )}
+            </button>
+
+            {/* Edit Button (For user messages - Claude style) */}
+            {isUser && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                title="Edit message"
+                aria-label="Edit message"
+                className="inline-flex h-6.5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-text-muted transition-all hover:bg-white/[0.08] hover:text-text"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Edit</span>
+              </button>
+            )}
+
+            {/* Retry / Regenerate Button (For assistant messages) */}
+            {!isUser && msg.type !== "error" && onRegenerate && (
+              <button
+                type="button"
+                onClick={() => onRegenerate(msg.id)}
+                disabled={isLoading}
+                title="Retry response"
+                aria-label="Retry response"
+                className="inline-flex h-6.5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-text-muted transition-all hover:bg-white/[0.08] hover:text-text disabled:opacity-40"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Retry</span>
+              </button>
+            )}
+
+            {/* Read Aloud / Speak Button (For assistant messages) */}
+            {!isUser && msg.content && (
+              <button
+                type="button"
+                onClick={() => (isSpeaking ? onStopSpeaking() : onSpeak(msg.id, msg.content))}
+                title={isSpeaking ? "Stop speaking" : "Read aloud"}
+                aria-label={isSpeaking ? "Stop speaking" : "Read aloud"}
+                className={`inline-flex h-6.5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium transition-all ${
+                  isSpeaking
+                    ? "bg-aqua/15 text-aqua font-semibold"
+                    : "text-text-muted hover:bg-white/[0.08] hover:text-text"
+                }`}
+              >
+                {isSpeaking ? (
+                  <>
+                    <VolumeX className="h-3.5 w-3.5" />
+                    <span>Stop</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Listen</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Speaking animation indicator when active */}
+        {isSpeaking && (
+          <div className="mt-1">
+            <SpeakingIndicator onStop={onStopSpeaking} />
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
@@ -152,6 +414,8 @@ export default function ConversationView() {
   const settings = useAppStore((s) => s.settings);
   const speakingId = useAppStore((s) => s.speakingId);
   const setSpeakingMessageId = useAppStore((s) => s.setSpeakingMessageId);
+  const editAndResubmitMessage = useAppStore((s) => s.editAndResubmitMessage);
+  const regenerateResponse = useAppStore((s) => s.regenerateResponse);
   const scrollRef = useRef(null);
   const prevMessageCountRef = useRef(messages.length);
 
@@ -182,7 +446,7 @@ export default function ConversationView() {
     const lastMsg = messages[messages.length - 1];
     if (
       lastMsg &&
-      (lastMsg.role === "assistant") &&
+      lastMsg.role === "assistant" &&
       lastMsg.type !== "intent" &&
       lastMsg.content
     ) {
@@ -198,75 +462,42 @@ export default function ConversationView() {
     }
   }, [activeTTS.isSpeaking, setSpeakingMessageId, speakingId]);
 
+  const handleSpeak = (id, text) => {
+    setSpeakingMessageId(id);
+    activeTTS.speak(text);
+  };
+
   const handleStopSpeaking = () => {
     activeTTS.stop();
     setSpeakingMessageId(null);
+  };
+
+  const handleEditSubmit = (messageId, newText) => {
+    editAndResubmitMessage(messageId, newText);
+  };
+
+  const handleRegenerate = (assistantMessageId) => {
+    regenerateResponse(assistantMessageId);
   };
 
   if (messages.length === 0 && !isLoading) return null;
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-5 sm:px-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-5 sm:px-6">
         <AnimatePresence mode="popLayout">
-          {messages.map((msg) => {
-            const isUser = msg.role === "user";
-
-            return (
-              <motion.div
-                key={msg.id}
-                variants={messageVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                layout
-                className={`flex items-start gap-3 ${
-                  isUser ? "flex-row-reverse" : ""
-                }`}
-              >
-                <MessageIcon role={msg.role} type={msg.type} />
-
-                <div
-                  className={`max-w-[min(80%,720px)] px-4 py-3 ${
-                    isUser
-                      ? "rounded-[18px] rounded-br bg-brand/95 text-ink-950 shadow-[0_0_24px_rgba(174,203,250,0.2)]"
-                      : msg.type === "error"
-                        ? "nova-card rounded-lg border-danger/30 bg-danger/10 text-danger"
-                        : "nova-card rounded-lg text-text"
-                  }`}
-                >
-                  <p className="whitespace-pre-line text-sm leading-relaxed">
-                    {msg.content}
-                  </p>
-
-                  {msg.type === "execution_confirmation" && msg.execution?.review ? (
-                    <ExecutionReview
-                      review={msg.execution.review}
-                      batches={msg.execution.batches || []}
-                    />
-                  ) : null}
-
-                  <span
-                    className={`mt-2 block font-code text-[10px] ${
-                      isUser ? "text-ink-700" : "text-text-muted"
-                    } ${isUser ? "text-right" : ""}`}
-                  >
-                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-
-                {/* Speaking indicator */}
-                {speakingId === msg.id && (
-                  <div className="mt-1">
-                    <SpeakingIndicator onStop={handleStopSpeaking} />
-                  </div>
-                )}
-              </motion.div>
-            );
-          })}
+          {messages.map((msg) => (
+            <MessageItem
+              key={msg.id}
+              msg={msg}
+              isSpeaking={speakingId === msg.id}
+              onSpeak={handleSpeak}
+              onStopSpeaking={handleStopSpeaking}
+              onEditSubmit={handleEditSubmit}
+              onRegenerate={handleRegenerate}
+              isLoading={isLoading}
+            />
+          ))}
         </AnimatePresence>
 
         {isLoading ? <TypingIndicator stage={loadingStage} /> : null}

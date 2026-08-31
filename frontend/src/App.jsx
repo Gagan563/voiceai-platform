@@ -3,6 +3,8 @@ import { Settings as SettingsIcon } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import HeroPrompt from "@/components/HeroPrompt";
 import BuilderView from "@/components/BuilderView";
+import ConversationView from "@/components/ConversationView";
+import InputBar from "@/components/InputBar";
 import MemoryView from "@/components/MemoryView";
 import VoiceActivation from "@/components/VoiceActivation";
 import HistoryPanel from "@/components/HistoryPanel";
@@ -42,7 +44,6 @@ export default function App() {
   const messages = useAppStore((s) => s.messages);
   const isLoading = useAppStore((s) => s.isLoading);
   const processUserInput = useAppStore((s) => s.processUserInput);
-  const clearMessages = useAppStore((s) => s.clearMessages);
   const settings = useAppStore((s) => s.settings);
   const error = useAppStore((s) => s.error);
   const auth = useAppStore((s) => s.auth);
@@ -103,12 +104,12 @@ export default function App() {
 
   // Template selection fires a prompt immediately
   const handleSelectTemplate = (prompt) => {
-    setActiveView("playground");
-    if (!isLoading) processUserInput(prompt);
+    setActiveView("build");
+    if (!isLoading) processUserInput(prompt, { build: true });
   };
 
   const handleBackToStart = () => {
-    clearMessages();
+    setActiveView("playground");
   };
 
   if (!auth?.isAuthenticated) {
@@ -122,7 +123,7 @@ export default function App() {
   return (
     <div className="App flex h-full bg-[var(--vox-bg)] text-text">
       {/* Left sidebar — hidden in builder mode for more space */}
-      {!hasConversation && (
+      {activeView !== "build" && (
         <Sidebar
           activeView={activeView}
           onNavigate={setActiveView}
@@ -133,7 +134,7 @@ export default function App() {
 
       {/* Main area */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {hasConversation ? (
+        {activeView === "build" ? (
           /* ── Builder mode ── */
           <BuilderView onBack={handleBackToStart} onOpenPanel={handleOpenPanel} />
         ) : isNovaModule ? (
@@ -172,7 +173,8 @@ export default function App() {
             </header>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <HeroPrompt onSubmit={handlePrompt} />
+              {hasConversation ? <ConversationView /> : <HeroPrompt onSubmit={handlePrompt} />}
+              {hasConversation ? <InputBar /> : null}
             </div>
           </>
         )}

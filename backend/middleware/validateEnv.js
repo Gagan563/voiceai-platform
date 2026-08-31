@@ -16,7 +16,15 @@ const warnings = [
 
 function validateEnv() {
   const env = process.env.NODE_ENV || "development";
-  const requiredVars = required[env] || required.development;
+  const memoryMode = process.env.VOICEAI_MEMORY_MODE || config.MEMORY_MODE;
+  
+  let requiredVars = [];
+  if (env === "production") {
+    requiredVars.push("JWT_SECRET");
+    if (memoryMode !== "local") {
+      requiredVars.push("DATABASE_URL");
+    }
+  }
   const missing = requiredVars.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {

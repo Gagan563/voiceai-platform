@@ -201,7 +201,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             }`}
           >
             <Eye className="h-3 w-3" />
-            Preview
+            Stage
           </button>
           <button
             type="button"
@@ -211,7 +211,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             }`}
           >
             <Code2 className="h-3 w-3" />
-            Code
+            Blueprint
           </button>
         </div>
 
@@ -271,11 +271,11 @@ function PreviewPanel({ previewArtifact, isLoading }) {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                   <Eye className="h-6 w-6" />
                 </div>
-                <p className="text-sm font-medium text-text">Preview</p>
+                <p className="text-sm font-medium text-text">Output bay</p>
                 <p className="max-w-sm text-xs leading-relaxed text-text-muted">
                   {previewArtifact
                     ? previewArtifact.summary || "Your app has been built. Check the output files."
-                    : "Describe what you want to build and the preview will appear here."}
+                    : "Your working result will take shape here as the mission progresses."}
                 </p>
                 {previewArtifact?.features?.length > 0 && (
                   <div className="mt-3 flex flex-wrap justify-center gap-1.5">
@@ -331,7 +331,7 @@ function PreviewPanel({ previewArtifact, isLoading }) {
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center text-center">
                 <Code2 className="mb-3 h-8 w-8 text-text-muted" />
-                <p className="text-sm text-text-muted">Code output will appear here</p>
+                <p className="text-sm text-text-muted">The project blueprint will appear here</p>
               </div>
             )}
           </div>
@@ -408,7 +408,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
 
   const send = () => {
     if (disabled || !chatText.trim()) return;
-    submitInput(chatText);
+    submitInput(chatText, { build: true });
     setChatText("");
   };
 
@@ -423,9 +423,9 @@ export default function BuilderView({ onBack, onOpenPanel }) {
     setContextBusy(true);
     try {
       const result = await analyzeContextDocument(file);
-      submitInput(result.prompt || `Requirements file: ${file.name}\n\n${result.text || result.summary || ""}`);
+      submitInput(result.prompt || `Requirements file: ${file.name}\n\n${result.text || result.summary || ""}`, { build: true });
     } catch (err) {
-      submitInput(`Requirements file upload failed for ${file.name}: ${err.message || "unknown"}`);
+      submitInput(`Requirements file upload failed for ${file.name}: ${err.message || "unknown"}`, { build: true });
     } finally {
       setContextBusy(false);
     }
@@ -438,9 +438,9 @@ export default function BuilderView({ onBack, onOpenPanel }) {
     setContextBusy(true);
     try {
       const result = await analyzeContextImage(file, "Summarize this image.", "image");
-      submitInput(`Image context: ${result.analysis}`);
+      submitInput(`Image context: ${result.analysis}`, { build: true });
     } catch (err) {
-      submitInput(`Image upload failed: ${err.message || "unknown"}`);
+      submitInput(`Image upload failed: ${err.message || "unknown"}`, { build: true });
     } finally {
       setContextBusy(false);
     }
@@ -453,16 +453,16 @@ export default function BuilderView({ onBack, onOpenPanel }) {
     : firstUser?.content?.slice(0, 40) || "Untitled";
 
   return (
-    <div className="flex h-full flex-col bg-[var(--vox-bg)]">
+    <div className="builder-shell flex h-full flex-col bg-[var(--vox-bg)]">
       {/* ── Top bar ── */}
-      <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-[var(--vox-border)] bg-[var(--vox-sidebar)] px-4">
+      <header className="builder-masthead flex h-[72px] shrink-0 items-center justify-between border-b border-[var(--vox-border)] bg-[var(--vox-sidebar)] px-5">
         <button
           type="button"
           onClick={onBack}
           className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-muted transition hover:bg-aqua/8 hover:text-aqua"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          New project
+          Leave board
         </button>
 
         <div className="flex items-center gap-2">
@@ -470,7 +470,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
             <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
             <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
           </svg>
-          <span className="text-sm font-semibold text-text">{projectTitle}</span>
+          <div><p className="text-[9px] font-bold uppercase tracking-[0.24em] text-text-muted">Mission board</p><span className="text-base font-semibold text-text">{projectTitle}</span></div>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -494,22 +494,22 @@ export default function BuilderView({ onBack, onOpenPanel }) {
           )}
           <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-medium text-text-muted transition hover:text-text">
             <RefreshCw className="h-3 w-3" />
-            Fork
+            Duplicate
           </button>
           <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--vox-border)] bg-[var(--vox-surface-1)] px-3 py-1.5 text-xs font-semibold text-text transition hover:bg-[var(--vox-surface-2)]">
             <Share2 className="h-3 w-3" />
-            Share
+            Invite
           </button>
           <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-aqua px-4 py-1.5 text-xs font-bold text-[#06080f] shadow-lg shadow-aqua/20 transition hover:shadow-aqua/40 hover:brightness-110">
-            Deploy
+            Publish
           </button>
         </div>
       </header>
 
       {/* ── Main split ── */}
-      <div className="flex min-h-0 flex-1">
+      <div className="builder-board flex min-h-0 flex-1">
         {/* ── LEFT: Chat panel ── */}
-        <div className="flex w-[300px] shrink-0 flex-col border-r border-[var(--vox-border)] bg-[var(--vox-sidebar)] lg:w-[360px]">
+        <div className="command-log flex w-[300px] shrink-0 flex-col border-r border-[var(--vox-border)] bg-[var(--vox-sidebar)] lg:w-[360px]">
           {/* Chat header */}
           <div className="flex h-10 items-center justify-between border-b border-[var(--vox-border)] px-3">
             <div className="flex items-center gap-1.5">
@@ -517,7 +517,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
                 <path d="M16 8L22 14L16 20L10 14L16 8Z" fill="currentColor" fillOpacity="0.8" />
                 <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="currentColor" />
               </svg>
-              <span className="text-xs font-semibold text-text">NOVA Agent</span>
+              <span className="text-xs font-semibold text-text">Command log</span>
             </div>
             <button type="button" className="grid h-6 w-6 place-items-center rounded text-text-muted transition hover:bg-white/[0.06] hover:text-text" title="New message">
               <Plus className="h-3.5 w-3.5" />
@@ -578,7 +578,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
                 onChange={(e) => setChatText(e.target.value)}
                 onKeyDown={onKeyDown}
                 disabled={disabled}
-                placeholder="Make changes, add new features, ask for anything"
+                placeholder="Send a new direction�"
                 className="w-full bg-transparent text-sm text-text outline-none placeholder:text-text-muted disabled:opacity-50"
               />
             </div>
@@ -612,7 +612,7 @@ export default function BuilderView({ onBack, onOpenPanel }) {
         </div>
 
         {/* ── RIGHT: Preview / Code ── */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="output-stage flex min-h-0 min-w-0 flex-1 flex-col">
           <PreviewPanel previewArtifact={previewArtifact} isLoading={isLoading} />
         </div>
       </div>

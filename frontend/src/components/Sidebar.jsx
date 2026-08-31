@@ -33,6 +33,7 @@ const navSections = [
     title: "Build",
     collapsible: true,
     items: [
+      { id: "build", label: "Build workspace", icon: Code2 },
       { id: "apps", label: "My Projects", icon: Code2 },
       { id: "gallery", label: "Templates", icon: BookOpen },
     ],
