@@ -4,13 +4,13 @@
   "description": "VoiceAI Platform — Backend API Server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js",
     "build": "npm run build --prefix frontend && node -e \"const fs=require('fs'); fs.cpSync('frontend/dist', 'public', {recursive:true}); fs.cpSync('frontend/dist', 'dist', {recursive:true});\"",
     "lint": "npm run lint --prefix frontend",
-    "test": "node --test tests/*.test.js",
-    "generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "test": "node --test backend/tests/*.test.js",
+    "generate": "prisma generate --schema=backend/prisma/schema.prisma",
+    "postinstall": "prisma generate --schema=backend/prisma/schema.prisma"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
