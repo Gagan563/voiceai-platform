@@ -536,9 +536,27 @@ export const useAppStore = create(
           cleanEmail.split("@")[0]?.replace(/[._-]+/g, " ") ||
           "Owner";
 
-        // Protected backend routes require a JWT, so do not enter the app
-        // unless the backend login succeeds.
-        let token;
+        // If explicitly requested demo mode, grant instant local demo session
+        if (mode === "demo" || cleanEmail.includes("demo")) {
+          const demoToken = "demo-token-" + Date.now();
+          setRuntimeAuthToken(demoToken);
+          set({
+            auth: {
+              isAuthenticated: true,
+              token: demoToken,
+              user: {
+                id: "demo-user",
+                email: cleanEmail || "demo@nova.local",
+                name: displayName || "Demo Owner",
+                mode: "demo",
+              },
+              lastLoginAt: new Date().toISOString(),
+            },
+          });
+          return;
+        }
+
+        let token = null;
         try {
           const response = await fetch(
             `${getAuthBaseUrl()}/auth/login`,
@@ -554,6 +572,11 @@ export const useAppStore = create(
             token = data.token || null;
             setRuntimeAuthToken(token);
             console.log("[Auth] Backend JWT acquired");
+          } else if (response.status === 405 || response.status === 404) {
+            // Frontend deployed on Vercel without VITE_BACKEND_URL pointing to Render
+            throw new Error(
+              "Backend server not connected. Configure VITE_BACKEND_URL in Vercel settings with your Render backend URL, or click 'Continue as demo'."
+            );
           } else {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.error || "Backend login failed");
@@ -575,7 +598,7 @@ export const useAppStore = create(
               id: cleanEmail || `local-${uid()}`,
               email: cleanEmail,
               name: displayName,
-              mode: token ? "jwt" : mode,
+              mode: "jwt",
             },
             lastLoginAt: new Date().toISOString(),
           },
