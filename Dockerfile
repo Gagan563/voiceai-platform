@@ -10,14 +10,16 @@ RUN npm run build
 FROM node:20-alpine AS production
 WORKDIR /app
 
-# Install backend dependencies
+# Install backend dependencies (with prisma schema for postinstall generator)
 COPY backend/package*.json ./
+COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./
 RUN npm ci --omit=dev
 
 # Copy backend source
 COPY backend/ ./
 
-# Generate Prisma client
+# Generate Prisma client (guaranteed)
 RUN npx prisma generate
 
 # Copy built frontend into backend static serving
