@@ -264,10 +264,6 @@ function MessageItem({
   const textareaRef = useRef(null);
 
   useEffect(() => {
-    setEditText(msg.content || msg.text || "");
-  }, [msg.content, msg.text]);
-
-  useEffect(() => {
     if (isEditing && textareaRef.current) {
       textareaRef.current.focus();
       textareaRef.current.style.height = "auto";
@@ -433,7 +429,10 @@ function MessageItem({
             {isUser && (
               <button
                 type="button"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setEditText(msg.content || msg.text || "");
+                  setIsEditing(true);
+                }}
                 title="Edit message"
                 aria-label="Edit message"
                 className="inline-flex h-6.5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-text-muted transition-all hover:bg-white/[0.08] hover:text-text"

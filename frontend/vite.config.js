@@ -11,8 +11,10 @@ export default defineConfig(({ mode }) => {
     env.VITEBACKENDTARGET ||
     "http://127.0.0.1:3001";
 
+  const base = env.VITE_BASE || "/";
+
   return {
-  base: "./",
+  base,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
